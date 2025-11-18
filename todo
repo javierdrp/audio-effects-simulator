@@ -1,0 +1,9 @@
+- variable chain para enlazar lines
+- package audiolines con los componentes
+- pasar warmup a dentro del componente
+
+- poder hacer chains diferentes en paralelo p.ej. dry/wet o l/r
+- poder elegir input y output
+- presets con efectos, poder guardar customs
+- noise gate
+- metrónomo, trabajar con bpm en vez de ms
