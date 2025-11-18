@@ -59,8 +59,21 @@ def input_thread():
         except Exception as e:
             print("Invalid command:", e)
 
+delay_fx = ab.StereoDelayEffect()
 
-def play_wav_through_chain(path: str):
+
+def build_effects_chain(sample_rate: int, channels_in: int, channels_out: int, blocksize: int, effects: list[ab.Effect]):
+    global delay_fx
+
+    chain = ab.EffectsChain(sample_rate, channels_in, channels_out, blocksize)
+    for fx_block in effects:
+        chain.add(fx_block)
+    chain.warmup()
+
+    return chain
+
+
+def play_wav_through_chain(path: str, effects: list[ab.Effect]):
     # Probe file
     with sf.SoundFile(path, mode="r") as f:
         file_sr = f.samplerate
@@ -68,17 +81,8 @@ def play_wav_through_chain(path: str):
 
     # Build a chain that matches the file's input channel count (1 or 2)
     ci = 1 if file_ch == 1 else 2
-
-    # Reuse the same style of effects; update the global delay_fx so the CLI controls it
-    global delay_fx
-    delay_fx = ab.StereoDelayEffect(max_delay_ms=MAX_DELAY_MS, mix_dry=MIX_DRY,
-                                    mix_wet=MIX_WET, offset_ms=STEREO_OFFSET_MS)
-    reverb_fx = ab.ReverbEffect(mix_wet=0.3, rt60_s=1, damp=0.3, pre_delay_ms=10.0)
-
-    chain = ab.EffectsChain(file_sr, ci, CHANNELS_OUT, BLOCKSIZE)
-    # chain.add(delay_fx); 
-    chain.add(reverb_fx)
-    chain.warmup()
+    
+    chain = build_effects_chain(file_sr, ci, CHANNELS_OUT, BLOCKSIZE, effects)
 
     # Keep the same controls while the file plays
     threading.Thread(target=input_thread, daemon=True).start()
@@ -120,70 +124,8 @@ def play_wav_through_chain(path: str):
             tail_frames -= n
 
 
-
-delay_fx = ab.StereoDelayEffect()
-
-
-def render_reverb_ir(seconds=3.0, sr=48000, ci=2, co=2, path="reverb_ir.wav"):
-    import soundfile as sf
-    chain = ab.EffectsChain(sr, ci, co, BLOCKSIZE)
-
-    # Reverb only, 100% wet so it can’t be mistaken for dry
-    rev = ab.ReverbEffect(
-        mix_dry=0.0, mix_wet=1.0,
-        rt60_s=1.2, damp=0.2, pre_delay_ms=0.0,
-        # make early energy obvious (shorter combs help audibility)
-        comb_times_ms=(10.0, 12.0, 15.0, 18.0),
-        allpass_times_ms=(4.0, 2.0)
-    )
-    chain.add(rev)
-    chain.warmup()
-
-    total = int(seconds * sr)
-    frames_left = total
-    out_blocks = []
-    first = True
-    while frames_left > 0:
-        n = min(BLOCKSIZE, frames_left)
-        x = np.zeros((n, ci), np.float32)
-        if first:
-            x[0, 0] = 1.0  # left impulse
-            first = False
-        y = np.empty((n, co), np.float32)
-        chain.process(x, y)
-        out_blocks.append(y.copy())
-        frames_left -= n
-
-    ycat = np.vstack(out_blocks)
-    peak = float(np.max(np.abs(ycat)))
-    print(f"[IR] wrote {path}, peak={peak:.6f}")
-    sf.write(path, ycat, sr)
-
-
-def main():
-    global delay_fx
-    gc.disable()
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--ir", action="store_true", help="Render reverb impulse response to reverb_ir.wav")
-    parser.add_argument("-f", "--file", help="Process and play this WAV/AIFF file instead of mic")
-    args = parser.parse_args()
-
-    if args.ir:
-        render_reverb_ir()
-        return
-    if args.file:
-        play_wav_through_chain(args.file)
-        gc.enable()
-        return
-
-    chain = ab.EffectsChain(SAMPLE_RATE, CHANNELS_IN, CHANNELS_OUT, BLOCKSIZE)
-    delay_fx = ab.StereoDelayEffect(max_delay_ms=MAX_DELAY_MS, mix_dry=MIX_DRY, mix_wet=MIX_WET, offset_ms=STEREO_OFFSET_MS)
-    reverb_fx = ab.ReverbEffect(mix_wet=0.3, rt60_s=1, damp=0.3, pre_delay_ms=10.0)
-    chain.add(delay_fx)
-    chain.add(reverb_fx)
-    chain.warmup()
-
+def play_live_through_chain(effects: list[ab.Effect]):
+    chain = build_effects_chain(SAMPLE_RATE, CHANNELS_IN, CHANNELS_OUT, BLOCKSIZE, effects)
     threading.Thread(target=input_thread, daemon=True).start()
 
     status_count = 0
@@ -208,6 +150,27 @@ def main():
         print("Audio status events:", status_count)
     except Exception as e:
         print("Audio error:", e)
+
+
+
+def main():
+    gc.disable()
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-f", "--file", help="Process and play this WAV/AIFF file instead of mic")
+    args = parser.parse_args()
+
+    global delay_X
+    delay_fx = ab.StereoDelayEffect(max_delay_ms=MAX_DELAY_MS, mix_dry=MIX_DRY, mix_wet=MIX_WET, offset_ms=STEREO_OFFSET_MS)
+    reverb_fx = ab.ReverbEffect(mix_wet=0.3, rt60_s=1, damp=0.3, pre_delay_ms=10.0)
+    effects = [delay_fx, reverb_fx]
+    
+    if args.file:
+        play_wav_through_chain(args.file, effects)
+        gc.enable()
+        return
+    else:
+        play_live_through_chain(effects)
         
 
 if __name__ == "__main__":
