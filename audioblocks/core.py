@@ -3,6 +3,44 @@ import numpy as np
 import threading
 
 
+def pick_devices(ch_in=1, ch_out=2, in_hint=('usb','mic'), out_hint=('system',)):
+    """Return (in_idx, out_idx) preferring JACK, else Pulse."""
+    apis: list[dict[str, Any]] = sd.query_hostapis() # type: ignore
+    jack_id  = next((i for i,a in enumerate(apis) if 'JACK'  in a['name']), None)
+    pulse_id = next((i for i,a in enumerate(apis) if 'Pulse' in a['name']), None)
+    devices: list[dict[str, Any]] = sd.query_devices() # type: ignore
+
+    def find_on_api(api_id, want_in, want_out, name_tokens):
+        name_tokens = tuple(t.lower() for t in name_tokens)
+        for i, d in enumerate(devices):
+            if d['hostapi'] != api_id:
+                continue
+            name = d['name'].lower()
+            if not all(tok in name for tok in name_tokens):
+                continue
+            ok_in  = (not want_in)  or d['max_input_channels']  >= ch_in
+            ok_out = (not want_out) or d['max_output_channels'] >= ch_out
+            if ok_in and ok_out:
+                return i
+        return None
+
+    # Try JACK first
+    if jack_id is not None:
+        in_idx  = find_on_api(jack_id,  True,  False, in_hint)   # e.g. ('usb','mic')
+        out_idx = find_on_api(jack_id,  False, True,  out_hint)  # e.g. ('system',)
+        if in_idx is not None and out_idx is not None:
+            return in_idx, out_idx
+
+    # Fallback: Pulse (single endpoint that you can reroute in pavucontrol)
+    if pulse_id is not None:
+        # often both are the same "pulse" device
+        pulse_idx = next(i for i,d in enumerate(devices) if d['hostapi']==pulse_id)
+        return pulse_idx, pulse_idx
+
+    # As a last resort, let PortAudio use OS defaults
+    return None, None
+
+
 class SmoothParam:
     def __init__(self, value, lo=-np.inf, hi=np.inf):
         self.current = float(value)
@@ -57,6 +95,13 @@ class EffectsChain:
             self._bufB = np.zeros((frames, self.co), dtype=np.float32)
             for e in self.effects:
                 e.prepare(self.sr, self.ci, self.co, frames)
+
+    def warmup(self):
+        frames = self.bs
+        dummy_in  = np.zeros((frames, self.ci), np.float32)
+        dummy_out = np.zeros((frames, self.co), np.float32)
+        for _ in range(2):
+            self.process(dummy_in, dummy_out)
 
     def process(self, in_block: np.ndarray, out_block: np.ndarray):
         """

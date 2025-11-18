@@ -1,7 +1,7 @@
 # Start JACK in qjackctl (Driver: alsa, Interface: 1,0, 48 kHz, Frames/Period 256 to start, Periods 3).
 # zita-j2a -d hw:1,0 -r 48000 -p 256 -n 3 -c 2 -j phones
 import sys
-from typing import Optional
+from typing import Optional, Any
 import sounddevice as sd
 import numpy as np
 import threading
@@ -22,43 +22,6 @@ FEEDBACK     = 0.5
 MIX_DRY      = 0.8
 MIX_WET      = 0.8
 STEREO_OFFSET_MS = 30
-
-
-def pick_devices(ch_in=1, ch_out=2, in_hint=('usb','mic'), out_hint=('system',)):
-    """Return (in_idx, out_idx) preferring JACK, else Pulse."""
-    apis = sd.query_hostapis()
-    jack_id  = next((i for i,a in enumerate(apis) if 'JACK'  in a['name']), None)
-    pulse_id = next((i for i,a in enumerate(apis) if 'Pulse' in a['name']), None)
-
-    def find_on_api(api_id, want_in, want_out, name_tokens):
-        name_tokens = tuple(t.lower() for t in name_tokens)
-        for i, d in enumerate(sd.query_devices()):
-            if d['hostapi'] != api_id:
-                continue
-            name = d['name'].lower()
-            if not all(tok in name for tok in name_tokens):
-                continue
-            ok_in  = (not want_in)  or d['max_input_channels']  >= ch_in
-            ok_out = (not want_out) or d['max_output_channels'] >= ch_out
-            if ok_in and ok_out:
-                return i
-        return None
-
-    # Try JACK first
-    if jack_id is not None:
-        in_idx  = find_on_api(jack_id,  True,  False, in_hint)   # e.g. ('usb','mic')
-        out_idx = find_on_api(jack_id,  False, True,  out_hint)  # e.g. ('system',)
-        if in_idx is not None and out_idx is not None:
-            return in_idx, out_idx
-
-    # Fallback: Pulse (single endpoint that you can reroute in pavucontrol)
-    if pulse_id is not None:
-        # often both are the same "pulse" device
-        pulse_idx = next(i for i,d in enumerate(sd.query_devices()) if d['hostapi']==pulse_id)
-        return pulse_idx, pulse_idx
-
-    # As a last resort, let PortAudio use OS defaults
-    return None, None
 
 
 def print_help():
@@ -98,14 +61,6 @@ def input_thread():
 delay_fx = ab.StereoDelayEffect()
 
 
-def warmup_chain(chain):
-    frames = chain.bs
-    dummy_in  = np.zeros((frames, chain.ci), np.float32)
-    dummy_out = np.zeros((frames, chain.co), np.float32)
-    for _ in range(2):
-        chain.process(dummy_in, dummy_out)
-
-
 def main():
     gc.disable()
 
@@ -114,15 +69,13 @@ def main():
     reverb_fx = ab.ReverbEffect(mix_wet=0.3, rt60_s=5, damp=0.4, pre_delay_ms=10.0)
     chain.add(delay_fx)
     chain.add(reverb_fx)
-    
-    warmup_chain(chain)
+    chain.warmup()
 
     threading.Thread(target=input_thread, daemon=True).start()
 
     status_count = 0
-    max_step_ms = (1000.0 * BLOCKSIZE) / SAMPLE_RATE
 
-    in_idx, out_idx = pick_devices(CHANNELS_IN, CHANNELS_OUT, in_hint=('usb','mic'), out_hint=('system',))
+    in_idx, out_idx = ab.pick_devices(CHANNELS_IN, CHANNELS_OUT, in_hint=('usb','mic'), out_hint=('system',))
     print("Using devices:", in_idx, out_idx)
 
     device_pair = (in_idx, out_idx) if (in_idx is not None and out_idx is not None) else None
