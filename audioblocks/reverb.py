@@ -1,4 +1,5 @@
-# audioblocks/reverb.py
+# audioblocks/reverb.py (Corrected and stable version)
+
 from __future__ import annotations
 import numpy as np
 import numba
@@ -6,15 +7,20 @@ from .core import Effect, SmoothParam
 
 # -------------------- Kernels --------------------
 
+# ... (pure_delay_kernel and comb_damped_kernel are unchanged) ...
 @numba.njit(cache=True, fastmath=True)
 def pure_delay_kernel(buf, w, size, x_block, y_out, dS):
-    """
-    Simple FIFO delay (no feedback).
-    buf: (size,) float32 ring
-    x_block, y_out: (N,1)
-    dS: delay in samples (0..size-1)
-    """
     N = x_block.shape[0]
+    if dS == 0:
+        for n in range(N):
+            x = x_block[n, 0]
+            y_out[n, 0] = x      # no delay
+            buf[w] = x
+            w += 1
+            if w == size:
+                w = 0
+        return w
+
     for n in range(N):
         r = (w - dS) % size
         y_out[n, 0] = buf[r]
@@ -26,57 +32,49 @@ def pure_delay_kernel(buf, w, size, x_block, y_out, dS):
 
 @numba.njit(cache=True, fastmath=True)
 def comb_damped_kernel(buf, w, size, x_block, y_out, dS, g, h, lp_prev):
-    """
-    Schroeder comb with simple HF damping inside the feedback loop.
-    g: feedback gain (0..1), h: damping (0..1) (one-pole LP mix)
-    """
     N = x_block.shape[0]
     for n in range(N):
         r = (w - dS) % size
         y = buf[r]
-        # one-pole in feedback: damp highs
         damped = (1.0 - h) * y + h * lp_prev
         lp_prev = damped
-
         y_out[n, 0] = y
         buf[w] = x_block[n, 0] + g * damped
-
         w += 1
         if w == size:
             w = 0
     return w, lp_prev
 
+
+# --- START: Corrected allpass_kernel ---
 @numba.njit(cache=True, fastmath=True)
-def allpass_kernel(buf, w, size, x_block, y_out, dS, a, ap_prev):
+def allpass_kernel(buf, w, size, x_block, y_out, dS, a):
     """
-    Canonical allpass diffuser.
-    a ~ 0.5..0.7 for diffusion.
+    Stable Gardner/Moorer-style allpass diffuser.
+    'a' is the feedback gain, typically ~0.5-0.7.
     """
     N = x_block.shape[0]
     for n in range(N):
         r = (w - dS) % size
+        delayed = buf[r]
         x = x_block[n, 0]
-        y = -a * x + buf[r] + a * ap_prev
+
+        # This is a standard, stable all-pass structure
+        y = delayed - a * x
         y_out[n, 0] = y
         buf[w] = x + a * y
-        ap_prev = y
 
         w += 1
         if w == size:
             w = 0
-    return w, ap_prev
+    return w
+# --- END: Corrected allpass_kernel ---
 
 
 # -------------------- Effect --------------------
 
 class ReverbEffect(Effect):
-    """
-    Stereo Schroeder/Moorer-style reverb:
-      - per-channel: parallel damped combs -> series allpasses
-      - optional pre-delay
-      - owns smoothed params (rt60, damp, pre-delay, mix)
-    """
-
+    # ... (__init__ is unchanged) ...
     def __init__(
         self,
         *,
@@ -148,8 +146,8 @@ class ReverbEffect(Effect):
         self._preL = np.empty((1,1), np.float32)
         self._preR = np.empty((1,1), np.float32)
 
-    # --------- external setters (thread-safe via SmoothParam) ---------
 
+    # ... (setters are unchanged) ...
     def set_rt60(self, seconds: float):     self.rt60.set_target(seconds)
     def set_damp(self, value: float):       self.damp.set_target(value)
     def set_pre_delay(self, ms: float):     self.pre_delay.set_target(ms)
@@ -160,14 +158,11 @@ class ReverbEffect(Effect):
     # -------------------- lifecycle --------------------
 
     def _mk_side(self, sample_rate: int, jitter: float):
-        # build comb & allpass lists for one side
         comb = []
         for base_ms in self._comb_ms_base:
             ms = min(base_ms + jitter, self._max_delay_ms - 1.0)
             Lsamp = int(sample_rate * ms / 1000.0)
-            # ensure nonzero length
             Lsamp = max(1, Lsamp)
-            # ring size = L + 1
             buf = np.zeros(Lsamp + 1, np.float32)
             comb.append({'buf': buf, 'w': 0, 'L': Lsamp, 'lp': 0.0})
 
@@ -177,10 +172,13 @@ class ReverbEffect(Effect):
             Lsamp = int(sample_rate * ms / 1000.0)
             Lsamp = max(1, Lsamp)
             buf = np.zeros(Lsamp + 1, np.float32)
-            ap.append({'buf': buf, 'w': 0, 'L': Lsamp, 'prev': 0.0})
+            # --- START: Removed the unnecessary 'prev' state ---
+            ap.append({'buf': buf, 'w': 0, 'L': Lsamp})
+            # --- END: Removed 'prev' state ---
 
         return comb, ap
 
+    # ... (prepare is unchanged, as the scratch buffers are still needed) ...
     def prepare(self, sample_rate: int, channels_in: int, channels_out: int, blocksize: int):
         # store fs and smoothing conversion
         self._fs = int(sample_rate)
@@ -207,13 +205,12 @@ class ReverbEffect(Effect):
     # -------------------- processing --------------------
 
     def _g_from_rt60(self, L_samples: int, fs: int, rt60_s: float) -> float:
-        # 60 dB = 10^-3 → g = 10^(-3 * (L/fs) / rt60)
         return 10.0 ** (-3.0 * (float(L_samples) / float(fs)) / max(1e-3, rt60_s))
 
     def process_into(self, x_in: np.ndarray, out: np.ndarray):
         N = x_in.shape[0]
         if self._sumL.shape[0] != N:
-            # resize scratch on unexpected block sizes
+            # (This block for resizing scratch buffers is fine)
             self._tmp1 = np.empty((N,1), np.float32)
             self._tmp2 = np.empty((N,1), np.float32)
             self._sumL = np.empty((N,1), np.float32)
@@ -226,57 +223,57 @@ class ReverbEffect(Effect):
         damp_now   = self.damp.step_towards(self._damp_step)
         pre_ms_now = self.pre_delay.step_towards(self._delay_step_ms)
         pre_dS     = int(self._fs * pre_ms_now / 1000.0)
-        # clamp to buffer
         if pre_dS >= self._pre_buf_L.shape[0]:
             pre_dS = self._pre_buf_L.shape[0] - 1
 
-        # split input (chain provides stereo already)
-        xL = x_in[:, 0:1]
-        xR = x_in[:, 1:2]
+        xL = x_in[:, 0:1].copy()
+        xR = x_in[:, 1:2].copy()
 
-        # pre-delay (per side)
+        # pre-delay
         self._pre_w_L = pure_delay_kernel(self._pre_buf_L, self._pre_w_L, self._pre_buf_L.shape[0], xL, self._preL, pre_dS)
         self._pre_w_R = pure_delay_kernel(self._pre_buf_R, self._pre_w_R, self._pre_buf_R.shape[0], xR, self._preR, pre_dS)
 
-        # ----- Left network -----
+        # Left comb sum
         self._sumL.fill(0.0)
         for c in self._comb_L:
             g = self._g_from_rt60(c['L'], self._fs, rt60_now)
-            # process comb
-            self._tmp1[:] = 0.0
             new_w, new_lp = comb_damped_kernel(c['buf'], c['w'], c['buf'].shape[0],
-                                               self._preL, self._tmp1, c['L'], g, damp_now, c['lp'])
+                                            self._preL, self._tmp1, c['L'], g, damp_now, c['lp'])
             c['w'], c['lp'] = new_w, new_lp
             self._sumL += self._tmp1
 
-        # diffuse via allpasses in series
-        yL = self._sumL
+        # Left All-pass chain (using ping-pong buffering from previous fix)
+        src, dst = self._sumL, self._tmp1
         for a in self._ap_L:
-            self._tmp2[:] = 0.0
-            new_w, ap_prev = allpass_kernel(a['buf'], a['w'], a['buf'].shape[0],
-                                            yL, self._tmp2, a['L'], self._ap_gain, a['prev'])
-            a['w'], a['prev'] = new_w, ap_prev
-            yL = self._tmp2
+            # --- START: Call the corrected kernel ---
+            new_w = allpass_kernel(a['buf'], a['w'], a['buf'].shape[0],
+                                   src, dst, a['L'], self._ap_gain)
+            a['w'] = new_w
+            # --- END: Call the corrected kernel ---
+            src, dst = dst, src
+        yL = src
 
-        # ----- Right network -----
+        # Right comb sum
         self._sumR.fill(0.0)
         for c in self._comb_R:
             g = self._g_from_rt60(c['L'], self._fs, rt60_now)
-            self._tmp1[:] = 0.0
             new_w, new_lp = comb_damped_kernel(c['buf'], c['w'], c['buf'].shape[0],
-                                               self._preR, self._tmp1, c['L'], g, damp_now, c['lp'])
+                                            self._preR, self._tmp1, c['L'], g, damp_now, c['lp'])
             c['w'], c['lp'] = new_w, new_lp
             self._sumR += self._tmp1
 
-        yR = self._sumR
+        # Right All-pass chain
+        src, dst = self._sumR, self._tmp1
         for a in self._ap_R:
-            self._tmp2[:] = 0.0
-            new_w, ap_prev = allpass_kernel(a['buf'], a['w'], a['buf'].shape[0],
-                                            yR, self._tmp2, a['L'], self._ap_gain, a['prev'])
-            a['w'], a['prev'] = new_w, ap_prev
-            yR = self._tmp2
+            # --- START: Call the corrected kernel ---
+            new_w = allpass_kernel(a['buf'], a['w'], a['buf'].shape[0],
+                                   src, dst, a['L'], self._ap_gain)
+            a['w'] = new_w
+            # --- END: Call the corrected kernel ---
+            src, dst = dst, src
+        yR = src
 
-        # mix & clip
+        # Mix and clip
         out[:, 0:1] = self.mix_dry * xL + self.mix_wet * yL
         out[:, 1:2] = self.mix_dry * xR + self.mix_wet * yR
         np.clip(out, -1.0, 1.0, out=out)

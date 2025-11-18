@@ -1,6 +1,7 @@
 from __future__ import annotations
 import numpy as np
 import threading
+import sounddevice as sd
 
 
 def pick_devices(ch_in=1, ch_out=2, in_hint=('usb','mic'), out_hint=('system',)):
