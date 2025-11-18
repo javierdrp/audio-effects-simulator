@@ -7,7 +7,6 @@ from .core import Effect, SmoothParam
 
 # -------------------- Kernels --------------------
 
-# ... (pure_delay_kernel and comb_damped_kernel are unchanged) ...
 @numba.njit(cache=True, fastmath=True)
 def pure_delay_kernel(buf, w, size, x_block, y_out, dS):
     N = x_block.shape[0]
@@ -45,8 +44,6 @@ def comb_damped_kernel(buf, w, size, x_block, y_out, dS, g, h, lp_prev):
             w = 0
     return w, lp_prev
 
-
-# --- START: Corrected allpass_kernel ---
 @numba.njit(cache=True, fastmath=True)
 def allpass_kernel(buf, w, size, x_block, y_out, dS, a):
     """
@@ -59,7 +56,6 @@ def allpass_kernel(buf, w, size, x_block, y_out, dS, a):
         delayed = buf[r]
         x = x_block[n, 0]
 
-        # This is a standard, stable all-pass structure
         y = delayed - a * x
         y_out[n, 0] = y
         buf[w] = x + a * y
@@ -68,7 +64,6 @@ def allpass_kernel(buf, w, size, x_block, y_out, dS, a):
         if w == size:
             w = 0
     return w
-# --- END: Corrected allpass_kernel ---
 
 
 # -------------------- Effect --------------------
@@ -82,7 +77,7 @@ class ReverbEffect(Effect):
         comb_times_ms = (29.7, 37.1, 41.1, 43.7),
         allpass_times_ms = (5.0, 1.7),
         allpass_gain = 0.6,
-        jitter_ms = 0.3,            # decorrelate L/R by ±jitter
+        jitter_ms = 0.3,            # decorrelate L/R by +-jitter
         # limits / buffers
         max_delay_ms = 200.0,       # per-line max for combs/allpasses
         max_pre_delay_ms = 100.0,   # pre-delay cap
