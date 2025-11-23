@@ -1,15 +1,16 @@
 # Start JACK in qjackctl (Driver: alsa, Interface: 1,0, 48 kHz, Frames/Period 256 to start, Periods 3).
 # zita-j2a -d hw:1,0 -r 48000 -p 256 -n 3 -c 2 -j phones
+
 import sys
-from typing import Optional, Any
 import sounddevice as sd
 import numpy as np
 import threading
 import gc
 import argparse
 import soundfile as sf
+import queue
 
-import audioblocks as ab
+import audioblocks_bk as ab
 
 
 SAMPLE_RATE  = 48000
@@ -62,6 +63,21 @@ def input_thread():
 delay_fx = ab.StereoDelayEffect()
 
 
+def plot_consumer_thread(data_queues: dict[str, queue.Queue]):
+    while True:
+        try:
+            in_data = data_queues["input"].get(timeout=0.1)
+            print(f"Received input data block of shape: {in_data.shape}")
+        except queue.Empty:
+            pass
+
+        try:
+            out_data = data_queues["output"].get(timeout=0.1)
+            print(f"Received output data block of shape: {out_data.shape}")
+        except queue.Empty:
+            pass
+
+
 def build_effects_chain(sample_rate: int, channels_in: int, channels_out: int, blocksize: int, effects: list[ab.Effect]):
     global delay_fx
 
@@ -73,7 +89,7 @@ def build_effects_chain(sample_rate: int, channels_in: int, channels_out: int, b
     return chain
 
 
-def play_wav_through_chain(path: str, effects: list[ab.Effect]):
+def play_wav_through_chain(path: str, effects: list[ab.Effect], data_queues: dict[str, queue.Queue]):
     # Probe file
     with sf.SoundFile(path, mode="r") as f:
         file_sr = f.samplerate
@@ -84,7 +100,8 @@ def play_wav_through_chain(path: str, effects: list[ab.Effect]):
     
     chain = build_effects_chain(file_sr, ci, CHANNELS_OUT, BLOCKSIZE, effects)
 
-    # Keep the same controls while the file plays
+    # Start the consumer and input threads
+    threading.Thread(target=plot_consumer_thread, args=(data_queues,), daemon=True).start()
     threading.Thread(target=input_thread, daemon=True).start()
 
     # Pick output device (or None = system default)
@@ -124,8 +141,11 @@ def play_wav_through_chain(path: str, effects: list[ab.Effect]):
             tail_frames -= n
 
 
-def play_live_through_chain(effects: list[ab.Effect]):
+def play_live_through_chain(effects: list[ab.Effect], data_queues: dict[str, queue.Queue]):
     chain = build_effects_chain(SAMPLE_RATE, CHANNELS_IN, CHANNELS_OUT, BLOCKSIZE, effects)
+
+    # Start the consumer and input threads
+    threading.Thread(target=plot_consumer_thread, args=(data_queues,), daemon=True).start()
     threading.Thread(target=input_thread, daemon=True).start()
 
     status_count = 0
@@ -160,17 +180,24 @@ def main():
     parser.add_argument("-f", "--file", help="Process and play this WAV/AIFF file instead of mic")
     args = parser.parse_args()
 
+    data_queues = {
+        "input": queue.Queue(maxsize=10),
+        "output": queue.Queue(maxsize=10)
+    }
+
+    input_tap = ab.PlotDataTap(data_queues['input'])
+    output_tap = ab.PlotDataTap(data_queues['output'])
+
     global delay_X
     delay_fx = ab.StereoDelayEffect(max_delay_ms=MAX_DELAY_MS, mix_dry=MIX_DRY, mix_wet=MIX_WET, offset_ms=STEREO_OFFSET_MS)
     reverb_fx = ab.ReverbEffect(mix_wet=0.3, rt60_s=1, damp=0.3, pre_delay_ms=10.0)
-    effects = [delay_fx, reverb_fx]
+    effects = [input_tap, delay_fx, reverb_fx, output_tap]
     
     if args.file:
-        play_wav_through_chain(args.file, effects)
+        play_wav_through_chain(args.file, effects, data_queues)
         gc.enable()
-        return
     else:
-        play_live_through_chain(effects)
+        play_live_through_chain(effects, data_queues)
         
 
 if __name__ == "__main__":

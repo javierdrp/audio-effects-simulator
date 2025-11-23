@@ -2,6 +2,7 @@ from __future__ import annotations
 import numpy as np
 import threading
 import sounddevice as sd
+import queue
 
 
 def pick_devices(ch_in=1, ch_out=2, in_hint=('usb','mic'), out_hint=('system',)):
@@ -73,6 +74,26 @@ class Effect:
         pass
     def process_into(self, x_in: np.ndarray, out: np.ndarray) -> None:
         raise NotImplementedError
+    
+
+class PlotDataTap(Effect):
+    """
+    A transparent effect that copies audio blocks to a thread-safe queue.
+    This allows a separate thread (e.g., a GUI) to receive data for plotting
+    without interrupting the real-time audio callback.
+    """
+
+    def __init__(self, data_queue: queue.Queue):
+        self.queue = data_queue
+
+    def process_into(self, x_in: np.ndarray, out: np.ndarray) -> None:
+        # transparent audio passthrough
+        out[:] = x_in
+        # try to copy block into queue without blocking the audio thread
+        try:
+            self.queue.put_nowait(x_in.copy())
+        except queue.Full:
+            pass
     
 
 class EffectsChain:
