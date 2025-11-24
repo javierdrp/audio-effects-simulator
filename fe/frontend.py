@@ -7,15 +7,35 @@ app.layout = dash.html.Div([
 
     dash.html.H1("Audio effects visualizer"),
 
-    # store to send commands to ws through js
     dash.dcc.Store(id='ws-commands-store'),
+    dash.dcc.Store(id='loading-state-store'),
     dash.html.Div(id='dummy-output'),
+    dash.html.Button(id='loading-state-reset-trigger', n_clicks=0, style={"display": "none"}),
 
     # control panel
     dash.html.Div([
         dash.html.H3("Audio source"),
-        dash.html.Button("Start microphone", id="start-mic-btn", n_clicks=0),
-        dash.html.Button("Stop stream", id="stop-stream-btn", n_clicks=0),
+        dash.dcc.RadioItems(id="source-mode-selector", options=[
+            {"label": " Microphone (live)", "value": "mic"},
+            {"label": "WAV file", "value": "file"}
+        ], value="mic", labelStyle={"display": "block"}),
+        dash.html.Div(id="mic-controls", children=[
+            dash.html.Button("Start microphone", id="start-mic-btn", n_clicks=0),
+            dash.html.Button("Stop stream", id="stop-stream-btn", n_clicks=0)
+        ]),
+        dash.html.Div(id="file-controls", children=[
+            dash.dcc.Upload(
+                id="upload-audio",
+                children=dash.html.Div(["Drag and drop or ", dash.html.A("Select a .wav file")]),
+                style={
+                    'width': '100%', 'height': '60px', 'lineHeight': '60px',
+                    'borderWidth': '1px', 'borderStyle': 'dashed',
+                    'borderRadius': '5px', 'textAlign': 'center', 'margin': '10px 0'
+                }
+            ),
+            dash.html.Div(id="output-filename"),
+            dash.dcc.Loading(id='loading-spinner', type='circle', children=dash.html.Div(id='loading-output'))
+        ]),
 
         dash.html.Hr(),
         dash.html.H3("Effects chain"),
@@ -34,18 +54,66 @@ app.layout = dash.html.Div([
         dash.dcc.Slider(id="reverb-rt60-slider", min=0.1, max=10.0, step=0.1, value=1.5),
         dash.html.Label("Wet mix"),
         dash.dcc.Slider(id="reverb-mix-slider", min=0.0, max=1.0, step=0.05, value=0.4),
-    ],
-    style={'width': '30%', 'float': 'left', 'padding': '10px'}),
+    ], style={'width': '30%', 'float': 'left', 'padding': '10px'}),
 
     dash.html.Div([
+        dash.html.H3("Audio playback"),
+        dash.html.Div([
+            dash.html.Div([
+                dash.html.Label("Original audio"),
+                dash.html.Audio(id="player-original", controls=True, style={"width": "100%"})
+            ], style={"flex": 1, "minWidth": "250px"}),
+            dash.html.Div([
+                dash.html.Label("Processed audio"),
+                dash.html.Audio(id="player-processed", controls=True, style={"width": "100%"})
+            ], style={"flex": 1, "minWidth": "250px"})
+        ], style={"display": "flex", "gap": "20px", "flexWrap": "wrap"}),
+
+        dash.html.Hr(),
+        dash.html.H3("Real-time visualization"),
         dash.dcc.Graph(id='time-domain-graph'),
         dash.dcc.Graph(id='spectrum-graph'),
-    ],
-    style={'width': '65%', 'float': 'right'})
+    ], style={'width': '65%', 'float': 'right'})
 ])
 
 
-# callbacks
+@app.callback(
+    dash.Output('upload-audio', 'disabled'),
+    dash.Output('build-chain-btn', 'disabled'),
+    dash.Output('delay-feedback-slider', 'disabled'),
+    dash.Output('delay-time-slider', 'disabled'),
+    dash.Output('reverb-rt60-slider', 'disabled'),
+    dash.Output('reverb-mix-slider', 'disabled'),
+    dash.Output('loading-spinner', 'children'),
+    dash.Input('loading-state-store', 'data')
+)
+def control_ui_during_load(data):
+    is_busy = data.get('busy', False) if data else False
+    return [is_busy] * 6 + [None]
+
+
+@app.callback(
+    dash.Output('mic-controls', 'style'),
+    dash.Output('file-controls', 'style'),
+    dash.Input('source-mode-selector', 'value')
+)
+def toggle_source_controls(mode):
+    if mode == 'mic':
+        return {"display": "block"}, {"display": "none"}
+    else:
+        return {"display": "none"}, {"display": "block"}
+    
+
+@app.callback(
+    dash.Output('ws-commands-store', 'data', allow_duplicate=True),
+    dash.Input('source-mode-selector', 'value'),
+    prevent_initial_call=True
+)
+def stop_mic_on_mode_change(mode):
+    if mode == 'file':
+        return {"command": "stop"}
+    return dash.no_update
+
 
 @app.callback(
     dash.Output('ws-commands-store', 'data', allow_duplicate=True),
@@ -129,7 +197,6 @@ def update_reverb_rt60(value):
     }
 
 
-
 @app.callback(
     dash.Output('ws-commands-store', 'data', allow_duplicate=True),
     dash.Input('reverb-mix-slider', 'value'),
@@ -144,6 +211,15 @@ def update_reverb_mix(value):
     }
 
 
+@app.callback(
+    dash.Output('loading-state-store', 'data', allow_duplicate=True),
+    dash.Input('loading-state-reset-trigger', 'n_clicks'),
+    prevent_initial_call=True
+)
+def reset_loading_state(n_clicks):
+    return {'busy': False}
+
+
 dash.clientside_callback(
     """(command) => {
         if (command) window.dash_clientside.ws_sender.send_command(command);
@@ -151,6 +227,29 @@ dash.clientside_callback(
     }""",
     dash.Output('dummy-output', 'children'),
     dash.Input('ws-commands-store', 'data'),
+    prevent_initial_call=True
+)
+
+
+dash.clientside_callback(
+    """
+    (contents, filename) => {
+        if (!contents) return [window.dash_clientside.no_update, "No file loaded"];
+        
+        const command = {
+            'command': 'process_file',
+            'contents': contents,
+            'filename': filename
+        }
+        
+        window.dash_clientside.ws_sender.send_command(command);
+        return [{'busy': true}, `Processing: ${filename}`];
+    }
+    """,
+    dash.Output('loading-state-store', 'data'),
+    dash.Output('output-filename', 'children'),
+    dash.Input('upload-audio', 'contents'),
+    dash.State('upload-audio', 'filename'),
     prevent_initial_call=True
 )
 

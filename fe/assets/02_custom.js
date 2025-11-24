@@ -1,4 +1,10 @@
+'use strict';
+
 let ws;
+
+let fullAudioOriginal = [];
+let fullAudioProcessed = [];
+let audioSampleRate = 48000;
 
 function calculateSpectrum(signal, sampleRate) {
     const n_fft = signal.length;
@@ -35,10 +41,86 @@ function calculateSpectrum(signal, sampleRate) {
     return { freqs, magnitudesDB };
 }
 
+function updatePlotsForPlaybackTime(currentTime) {
+    if (fullAudioOriginal.length === 0) return;
+
+    const plotBlockSize = 1024;
+    const startIndex = Math.floor(currentTime * audioSampleRate);
+
+    if (startIndex + plotBlockSize > fullAudioOriginal.length) return;
+
+    const originalSlice = fullAudioOriginal.slice(startIndex, startIndex + plotBlockSize);
+    const processedSlice = fullAudioProcessed.slice(startIndex, startIndex + plotBlockSize);
+
+    const time_axis = Array.from({length: plotBlockSize}, (_, i) => currentTime + (i / audioSampleRate));
+
+    Plotly.react('time-domain-graph', [{
+        x: time_axis,
+        y: originalSlice,
+        name: 'Input',
+        type: 'scatter',
+        line: {width: 1}
+    }, {
+        x: time_axis,
+        y: processedSlice,
+        name: 'Processed output',
+        type: 'scatter',
+        line: {width: 1}
+    }], 
+    {
+        title: 'Time-domain signal',
+        margin: {l: 40, r: 20, t: 40, b: 40},
+        xaxis: {title: 'Tiempo (s)'},
+        yaxis: {title: 'Amplitud', range: [-1, 1], autorange: false}
+    });
+
+    const spectrumInput = calculateSpectrum(originalSlice, audioSampleRate);
+    const spectrumOutput = calculateSpectrum(processedSlice, audioSampleRate);
+
+    Plotly.react('spectrum-graph', [{
+        x: spectrumInput.freqs,
+        y: spectrumInput.magnitudesDB,
+        name: 'Input',
+        type: 'scatter',
+        line: {width: 1}
+    }, {
+        x: spectrumOutput.freqs,
+        y: spectrumOutput.magnitudesDB,
+        name: 'Processed output',
+        type: 'scatter',
+        line: {width: 1}
+    }, {
+        title: 'Signal spectrum',
+        margin: {l: 40, r: 20, t: 40, b: 40},
+        xaxis: {
+            title: 'Frequency (Hz)',
+            type: 'log',
+            range: [Math.log10(20), Math.log10(audioSampleRate/2)]  // audible range
+        },
+        yaxis: {
+            title: 'Magnitude (dB)',
+            range: [-100, 0],
+            autorange: false
+        }
+    }]);
+}
+
 function connectWebSocket() {
     ws = new WebSocket("ws://localhost:8765");
 
-    ws.onopen = (event) => console.log("Connected to audio backend");
+    ws.onopen = (event) => {
+        console.log("Connected to audio backend");
+
+        const playerOrig = document.getElementById('player-original');
+        const playerProc = document.getElementById('player-processed');
+
+        const updatePlots = (e) => updatePlotsForPlaybackTime(e.target.currentTime);
+
+        playerOrig.addEventListener('timeupdate', updatePlots);
+        playerProc.addEventListener('timeupdate', updatePlots);
+        playerOrig.addEventListener('seeked', updatePlots);
+        playerProc.addEventListener('seeked', updatePlots);
+    };
 
     ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
@@ -99,6 +181,20 @@ function connectWebSocket() {
                     autorange: false
                 }
             }]);
+        } else if (data.type === "file_processed") {
+            fullAudioOriginal = data.original_samples;
+            fullAudioProcessed = data.processed_samples;
+            audioSampleRate = data.sample_rate;
+
+            const player_orig = document.getElementById('player-original');
+            const player_proc = document.getElementById('player-processed');
+            player_orig.src = data.original_b64;
+            player_proc.src = data.processed_b64;
+
+            updatePlotsForPlaybackTime(0);
+            
+            const resetButton = document.getElementById('loading-state-reset-trigger');
+            if (resetButton) resetButton.click();
         }
     };
 

@@ -1,10 +1,15 @@
 from __future__ import annotations
+import json
 import queue
 import sounddevice as sd
+import sys
+import base64
+import io
+import numpy as np
+import soundfile as sf
+import scipy.io
 
-from .core import EffectsChain, PlotDataTap, SmoothParam
-from .delay import StereoDelayEffect
-from .reverb import ReverbEffect
+import audioblocks as ab
 
 
 SAMPLE_RATE  = 48000
@@ -20,36 +25,95 @@ class AudioEngine:
         self.data_queues = data_queues
         self.is_running = False
         self.effects_map = {}
+        self.last_chain_config = []
+        self.is_processing_file = False
         self.status_count = 0
 
     def build_chain(self, effects_config: list[dict]):
-        chain = EffectsChain(SAMPLE_RATE, CHANNELS_IN, CHANNELS_OUT, BLOCKSIZE)
+        self.last_chain_config = effects_config
+        chain = ab.EffectsChain(SAMPLE_RATE, CHANNELS_IN, CHANNELS_OUT, BLOCKSIZE)
         self.effects_map.clear()
 
-        chain.add(PlotDataTap(self.data_queues['input']))
+        chain.add(ab.PlotDataTap(self.data_queues['input']))
 
         for config in effects_config:
             effect_id = config.get('id')
             effect_type = config.get('type')
             params = config.get('params', {})
 
-            if effect_type == 'delay':
-                fx = StereoDelayEffect(**params)
-            elif effect_type == 'reverb':
-                fx = ReverbEffect(**params)
+            if effect_type == 'delay': fx = ab.StereoDelayEffect(**params)
+            elif effect_type == 'reverb': fx = ab.ReverbEffect(**params)
             #  add other effects here
-            else:
-                print(f"Warning: unknown effect type '{effect_type}'")
-                continue
-
+            else: continue
             chain.add(fx)
+
             if effect_id:
                 self.effects_map[effect_id] = fx
 
-        chain.add(PlotDataTap(self.data_queues['output']))
+        chain.add(ab.PlotDataTap(self.data_queues['output']))
 
         chain.warmup()
         self.effects_chain = chain
+
+    async def process_wav_file(self, contents, websocket):
+        if self.is_processing_file:
+            print("Warning. A file is already being process. Ignoring new request")
+            return
+        
+        self.is_processing_file = True
+        try:
+            content_type, content_string = contents.split(',')
+            decoded_bytes = base64.b64decode(content_string)
+
+            with io.BytesIO(decoded_bytes) as wav_io:
+                audio_data, fs = sf.read(wav_io, dtype='float32')
+
+            if audio_data.ndim > 1:
+                audio_data_mono = audio_data.mean(axis=1, keepdims=True)
+            else:
+                audio_data_mono = audio_data.reshape(-1, 1)
+
+            ch_in, ch_out = 1, 2
+            file_blocksize = 1024
+            chain = ab.EffectsChain(fs, ch_in, ch_out, file_blocksize)
+            for config in self.last_chain_config:
+                effect_type, params = config.get('type'), config.get('params', {})
+                if effect_type == "delay":
+                    fx = ab.StereoDelayEffect(**params)
+                elif effect_type == "reverb":
+                    fx = ab.ReverbEffect(**params)
+                else: continue
+                chain.add(fx)
+            chain.warmup()
+
+            processed_audio = np.zeros((len(audio_data_mono), ch_out), dtype=np.float32)
+            chain.process(audio_data_mono, processed_audio)
+
+            processed_audio = np.clip(processed_audio, -1.0, 1.0)
+            processed_int16 = (processed_audio * 32767).astype(np.int16)
+
+            with io.BytesIO() as out_io:
+                scipy.io.wavfile.write(out_io, fs, processed_int16)
+                out_io.seek(0)
+                processed_b64_bytes = base64.b64encode(out_io.read())
+
+            processed_b64_string = processed_b64_bytes.decode('ascii')
+            processed_data_url = f"data:audio/wav;base64,{processed_b64_string}"
+
+            response = {
+                'type': 'file_processed',
+                'original_b64': contents,
+                'processed_b64': processed_data_url,
+                'sample_rate': fs,
+                'original_samples': audio_data_mono.flatten().tolist(),
+                'processed_samples': processed_audio.mean(axis=1).flatten().tolist()
+            }
+            await websocket.send(json.dumps(response))
+        
+        except Exception as e:
+            print(f"Error processing WAV file: {e}")
+        finally:
+            self.is_processing_file = False
 
     def update_param(self, effect_id: str, param_name: str, value: float):
         if effect_id not in self.effects_map:
@@ -62,7 +126,7 @@ class AudioEngine:
         setter_func = f"set_{param_name}"
         if hasattr(effect, setter_func):
             getattr(effect, setter_func)(value)
-        elif hasattr(effect, param_name) and isinstance((att := getattr(effect, param_name)), SmoothParam):
+        elif hasattr(effect, param_name) and isinstance((att := getattr(effect, param_name)), ab.SmoothParam):
             att.set_target(value)
         else:
             print(f"Warning: parameter '{param_name}' in effect '{effect_id}' could not be updated")

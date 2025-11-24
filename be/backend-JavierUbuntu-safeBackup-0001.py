@@ -95,7 +95,7 @@ async def handler(websocket):
 async def main():
     gc.disable()
     print("Audio effects server initialized on ws://localhost:8765")
-    async with ws.serve(handler, "localhost", 8765, max_size = 500 * 1024 * 1024):
+    async with ws.serve(handler, "localhost", 8765, max_size =  * 1024 * 1024):
         await asyncio.Future()
         
 

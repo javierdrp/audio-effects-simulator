@@ -1,9 +1,13 @@
-- variable chain para enlazar lines
-- package audiolines con los componentes
-- pasar warmup a dentro del componente
-
 - poder hacer chains diferentes en paralelo p.ej. dry/wet o l/r
 - poder elegir input y output
 - presets con efectos, poder guardar customs
 - noise gate
 - metrónomo, trabajar con bpm en vez de ms
+
+# frontend
+- build chain al cargar la pagina
+- wav file spectrum not working
+- fix spectrum y range
+- fix time range
+- fix plot titles and axes
+- escuchar dry / mix (selector)

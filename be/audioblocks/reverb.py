@@ -3,7 +3,8 @@
 from __future__ import annotations
 import numpy as np
 import numba
-from .core import Effect, SmoothParam
+
+import audioblocks as ab
 
 # -------------------- Kernels --------------------
 
@@ -68,7 +69,7 @@ def allpass_kernel(buf, w, size, x_block, y_out, dS, a):
 
 # -------------------- Effect --------------------
 
-class ReverbEffect(Effect):
+class ReverbEffect(ab.Effect):
     # ... (__init__ is unchanged) ...
     def __init__(
         self,
@@ -108,9 +109,9 @@ class ReverbEffect(Effect):
         self.mix_wet = float(mix_wet)
 
         # smoothed live params
-        self.rt60     = SmoothParam(rt60_s, 0.1, 10.0)
-        self.damp     = SmoothParam(damp,   0.0, 0.99)
-        self.pre_delay= SmoothParam(pre_delay_ms, 0.0, self._max_pre_ms)
+        self.rt60     = ab.SmoothParam(rt60_s, 0.1, 10.0)
+        self.damp     = ab.SmoothParam(damp,   0.0, 0.99)
+        self.pre_delay= ab.SmoothParam(pre_delay_ms, 0.0, self._max_pre_ms)
 
         # smoothing setup
         self._step_samples = float(step_samples)

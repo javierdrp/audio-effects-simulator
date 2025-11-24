@@ -2,7 +2,7 @@ from __future__ import annotations
 import numpy as np
 import numba
 
-from .core import *
+import audioblocks as ab
 
 @numba.njit(cache=True, fastmath=True)
 def delay_kernel(buf, w, size, x_block, wet_out, dS, feedback):
@@ -40,7 +40,7 @@ class DelayLine:
             dS = self.size - 1
         self.w = delay_kernel(self.buf, self.w, self.size, x_block, wet_out, dS, feedback)
 
-class StereoDelayEffect(Effect):
+class StereoDelayEffect(ab.Effect):
     """
     Mono-in/stereo-out delay (or stereo-through), independent L/R delay lines.
     Uses a small offset on R for width. Mix = dry + wet inside the effect.
@@ -51,8 +51,8 @@ class StereoDelayEffect(Effect):
         self.mix_wet = mix_wet
         self.offset_ms = offset_ms
 
-        self.delay_ms = SmoothParam(delay_ms, 1.0, max_delay_ms - 1.0)
-        self.feedback = SmoothParam(feedback, 0.0, 0.95)
+        self.delay_ms = ab.SmoothParam(delay_ms, 1.0, max_delay_ms - 1.0)
+        self.feedback = ab.SmoothParam(feedback, 0.0, 0.95)
         # smoothing config
         self._fb_step = fb_step            # feedback step per block (unitless)
         self._step_samples = step_samples  # convert to ms in prepare()
