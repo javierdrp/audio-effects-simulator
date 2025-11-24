@@ -151,6 +151,7 @@ class ReverbEffect(ab.Effect):
         if dry is not None: self.mix_dry = float(dry)
         if wet is not None: self.mix_wet = float(wet)
     def set_mix_wet(self, wet: float): self.mix_wet = wet
+    def set_mix_dry(self, dry: float): self.mix_dry = dry
 
     # -------------------- lifecycle --------------------
 

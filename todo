@@ -12,3 +12,6 @@
 - escuchar dry / mix (selector)
 - botón para reaplicar efectos al file // MEJOR hacer streaming con el file para que el backend aplique los efectos en vivo
 - slider / input numérico para editar parámetros
+- exportar wav procesado
+- plot estereo
+- load examples -> rain

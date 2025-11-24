@@ -9,7 +9,6 @@ EFFECT_DEFAULTS = {
         'delay_ms': 300,
         'mix_dry': 0.7,
         'mix_wet': 0.5,
-        'max_delay_ms': 1500, # Also good to include non-slider params
         'offset_ms': 30
     },
     'reverb': {
@@ -43,6 +42,21 @@ def create_effect_card(effect_data, index, total_count):
                 id={'type': 'effect-param-slider', 'effect_id': effect_id, 'param': 'delay_ms'},
                 min=50, max=1000, step=5, value=params['delay_ms']
             ),
+            dash.html.Label("Dry mix"),
+            dash.dcc.Slider(
+                id={'type': 'effect-param-slider', 'effect_id': effect_id, 'param': 'mix_dry'},
+                min=0, max=1, step=0.05, value=params['mix_dry']
+            ),
+            dash.html.Label("Wet mix"),
+            dash.dcc.Slider(
+                id={'type': 'effect-param-slider', 'effect_id': effect_id, 'param': 'mix_wet'},
+                min=0, max=1, step=0.05, value=params['mix_wet']
+            ),
+            dash.html.Label("Stereo offset"),
+            dash.dcc.Slider(
+                id={'type': 'effect-param-slider', 'effect_id': effect_id, 'param': 'offset_ms'},
+                min=0, max=1000, step=10, value=params['offset_ms']
+            ),
         ]
     elif effect_type == 'reverb':
         controls = [
@@ -51,10 +65,25 @@ def create_effect_card(effect_data, index, total_count):
                 id={'type': 'effect-param-slider', 'effect_id': effect_id, 'param': 'rt60_s'},
                 min=0.1, max=10.0, step=0.1, value=params['rt60_s']
             ),
+            dash.html.Label("Dry mix"),
+            dash.dcc.Slider(
+                id={'type': 'effect-param-slider', 'effect_id': effect_id, 'param': 'mix_dry'},
+                min=0, max=1, step=0.05, value=params['mix_dry']
+            ),
             dash.html.Label("Wet mix"),
             dash.dcc.Slider(
                 id={'type': 'effect-param-slider', 'effect_id': effect_id, 'param': 'mix_wet'},
-                min=0.0, max=1.0, step=0.05, value=params['mix_wet']
+                min=0, max=1, step=0.05, value=params['mix_wet']
+            ),
+            dash.html.Label("Damping"),
+            dash.dcc.Slider(
+                id={'type': 'effect-param-slider', 'effect_id': effect_id, 'param': 'damp'},
+                min=0, max=0.95, step=0.05, value=params['damp']
+            ),
+            dash.html.Label("Pre-delay (ms)"),
+            dash.dcc.Slider(
+                id={'type': 'effect-param-slider', 'effect_id': effect_id, 'param': 'pre_delay_ms'},
+                min=0, max=100, step=0.05, value=params['pre_delay_ms']
             ),
         ]
 

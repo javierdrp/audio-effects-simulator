@@ -66,6 +66,9 @@ class StereoDelayEffect(ab.Effect):
     def set_delay_ms(self, v: float): self.delay_ms.set_target(v)
     def nudge_delay_ms(self, dv: float): self.delay_ms.nudge(dv)
     def set_feedback(self, v: float): self.feedback.set_target(v)
+    def set_mix_dry(self, v: float): self.mix_dry = v
+    def set_mix_wet(self, v: float): self.mix_wet = v
+    def set_offset_ms(self, v: float): self.offset_ms = v
 
     def prepare(self, sample_rate: int, channels_in: int, channels_out: int, blocksize: int):
         self._dlL.configure(sample_rate, self.max_delay_ms)
