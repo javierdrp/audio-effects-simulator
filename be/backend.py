@@ -31,9 +31,10 @@ async def data_sender(websocket, data_queues: dict[str, queue.Queue], sample_rat
                 "sample_rate": sample_rate
             }
             await websocket.send(json.dumps(payload))
-
+            await asyncio.sleep(0.033)
+    
         except queue.Empty:
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(0.1)
         except ws.exceptions.ConnectionClosed:
             break
 

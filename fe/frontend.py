@@ -91,6 +91,7 @@ def create_effect_card(effect_data, index, total_count):
     down_visibility = "hidden" if (index == total_count - 1) else "visible"
 
     return dash.html.Div(
+        id={'type': 'effect-card-container', 'index': effect_id},
         className='effect-card',
         children=[
             dash.html.H4(f"{effect_type.title()} effect", style={'display': 'inline-block', 'marginRight': '20px'}),
@@ -152,7 +153,7 @@ app.layout = dash.html.Div([
 
         dash.html.Hr(),
         dash.html.H3("Effects chain"),
-        dash.html.Div(id='effects-chain-container'),
+        dash.html.Div(id='effects-chain-container', children=[]),
         dash.dcc.Dropdown(id='add-effect-dropdown', options=[
             {'label': 'Delay', 'value': 'delay'},
             {'label': 'Reverb', 'value': 'reverb'}
@@ -183,11 +184,21 @@ app.layout = dash.html.Div([
 
 @app.callback(
     dash.Output('effects-chain-container', 'children'),
-    dash.Input('effects-chain-store', 'data')
+    dash.Input('effects-chain-store', 'data'),
+    dash.State('effects-chain-container', 'children')
 )
-def update_effects_chain_ui(chain_data):
+def update_effects_chain_ui(chain_data, current_children):
     if not chain_data:
-        return dash.html.P("No effects in the chain")
+        # If data is empty but UI is not, we need to clear it
+        if current_children: 
+            return []
+        return dash.no_update
+    # prevent rerender when user moves a slider
+    new_ids = [e['effect_id'] for e in chain_data]
+    current_ids = [child['props']['id']['index'] for child in current_children]
+    if new_ids == current_ids:
+        raise dash.exceptions.PreventUpdate
+    
     count = len(chain_data)
     return [create_effect_card(effect, i, count) for i, effect in enumerate(chain_data)]
 

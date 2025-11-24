@@ -29,6 +29,8 @@ class AudioEngine:
         self.is_processing_file = False
         self.status_count = 0
 
+        self.build_chain([])
+
     def build_chain(self, effects_config: list[dict]):
         self.last_chain_config = effects_config
         chain = ab.EffectsChain(SAMPLE_RATE, CHANNELS_IN, CHANNELS_OUT, BLOCKSIZE)
