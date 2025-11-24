@@ -37,7 +37,7 @@ class AudioEngine:
         chain.add(ab.PlotDataTap(self.data_queues['input']))
 
         for config in effects_config:
-            effect_id = config.get('id')
+            effect_id = config.get("effect_id")
             effect_type = config.get('type')
             params = config.get('params', {})
 

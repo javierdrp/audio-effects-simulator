@@ -109,9 +109,9 @@ class ReverbEffect(ab.Effect):
         self.mix_wet = float(mix_wet)
 
         # smoothed live params
-        self.rt60     = ab.SmoothParam(rt60_s, 0.1, 10.0)
+        self.rt60_s     = ab.SmoothParam(rt60_s, 0.1, 10.0)
         self.damp     = ab.SmoothParam(damp,   0.0, 0.99)
-        self.pre_delay= ab.SmoothParam(pre_delay_ms, 0.0, self._max_pre_ms)
+        self.pre_delay_ms= ab.SmoothParam(pre_delay_ms, 0.0, self._max_pre_ms)
 
         # smoothing setup
         self._step_samples = float(step_samples)
@@ -144,9 +144,9 @@ class ReverbEffect(ab.Effect):
 
 
     # setters
-    def set_rt60(self, seconds: float):     self.rt60.set_target(seconds)
+    def set_rt60_s(self, seconds: float):     self.rt60_s.set_target(seconds)
     def set_damp(self, value: float):       self.damp.set_target(value)
-    def set_pre_delay(self, ms: float):     self.pre_delay.set_target(ms)
+    def set_pre_delay_ms(self, ms: float):     self.pre_delay_ms.set_target(ms)
     def set_mix(self, dry: float | None = None, wet: float | None = None):
         if dry is not None: self.mix_dry = float(dry)
         if wet is not None: self.mix_wet = float(wet)
@@ -216,9 +216,9 @@ class ReverbEffect(ab.Effect):
             self._preR = np.empty((N,1), np.float32)
 
         # smooth params
-        rt60_now   = self.rt60.step_towards(self._rt60_step)
+        rt60_now   = self.rt60_s.step_towards(self._rt60_step)
         damp_now   = self.damp.step_towards(self._damp_step)
-        pre_ms_now = self.pre_delay.step_towards(self._delay_step_ms)
+        pre_ms_now = self.pre_delay_ms.step_towards(self._delay_step_ms)
         pre_dS     = int(self._fs * pre_ms_now / 1000.0)
         if pre_dS >= self._pre_buf_L.shape[0]:
             pre_dS = self._pre_buf_L.shape[0] - 1

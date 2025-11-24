@@ -1,7 +1,89 @@
+import uuid
 import dash
+import copy
 
+
+EFFECT_DEFAULTS = {
+    'delay': {
+        'feedback': 0.5,
+        'delay_ms': 300,
+        'mix_dry': 0.7,
+        'mix_wet': 0.5,
+        'max_delay_ms': 1500, # Also good to include non-slider params
+        'offset_ms': 30
+    },
+    'reverb': {
+        'rt60_s': 1.5,
+        'mix_wet': 0.4,
+        'mix_dry': 0.8,
+        'damp': 0.3,
+        'pre_delay_ms': 0.0
+    }
+    # --- ADD DEFAULTS FOR ANY NEW EFFECTS HERE ---
+}
 
 app = dash.Dash(__name__)
+
+
+def create_effect_card(effect_data, index, total_count):
+    effect_id = effect_data["effect_id"]
+    effect_type = effect_data["type"]
+    params = effect_data["params"]
+
+    controls = []
+    if effect_type == 'delay':
+        controls = [
+            dash.html.Label("Feedback (0-0.95)"),
+            dash.dcc.Slider(
+                id={'type': 'effect-param-slider', 'effect_id': effect_id, 'param': 'feedback'},
+                min=0, max=0.95, step=0.01, value=params['feedback']
+            ),
+            dash.html.Label("Delay time (ms)"),
+            dash.dcc.Slider(
+                id={'type': 'effect-param-slider', 'effect_id': effect_id, 'param': 'delay_ms'},
+                min=50, max=1000, step=5, value=params['delay_ms']
+            ),
+        ]
+    elif effect_type == 'reverb':
+        controls = [
+            dash.html.Label("60dB decay time (s)"),
+            dash.dcc.Slider(
+                id={'type': 'effect-param-slider', 'effect_id': effect_id, 'param': 'rt60_s'},
+                min=0.1, max=10.0, step=0.1, value=params['rt60_s']
+            ),
+            dash.html.Label("Wet mix"),
+            dash.dcc.Slider(
+                id={'type': 'effect-param-slider', 'effect_id': effect_id, 'param': 'mix_wet'},
+                min=0.0, max=1.0, step=0.05, value=params['mix_wet']
+            ),
+        ]
+
+    up_visibility = "hidden" if (index == 0) else "visible"
+    down_visibility = "hidden" if (index == total_count - 1) else "visible"
+
+    return dash.html.Div(
+        className='effect-card',
+        children=[
+            dash.html.H4(f"{effect_type.title()} effect", style={'display': 'inline-block', 'marginRight': '20px'}),
+            # UP BUTTON
+            dash.html.Button(
+                "↑", id={'type': 'move-up-btn', 'index': index}, 
+                n_clicks=0,
+                style={'marginRight': '5px', 'padding': '5px 10px', 'cursor': 'pointer', 'visibility': up_visibility}
+            ),
+            # DOWN BUTTON
+            dash.html.Button(
+                "↓", id={'type': 'move-down-btn', 'index': index}, 
+                n_clicks=0,
+                style={'marginRight': '15px', 'padding': '5px 10px', 'cursor': 'pointer', 'visibility': down_visibility}
+            ),
+            # DELETE BUTTON
+            dash.html.Button("X", id={'type': 'delete-effect-btn', 'index': effect_id}, n_clicks=0),
+            *controls
+        ],
+        style={'border': '1px solid #ddd', 'padding': '10px', 'marginBottom': '10px', 'borderRadius': '5px'}
+    )
+
 
 app.layout = dash.html.Div([
 
@@ -9,6 +91,8 @@ app.layout = dash.html.Div([
 
     dash.dcc.Store(id='ws-commands-store'),
     dash.dcc.Store(id='loading-state-store'),
+    dash.dcc.Store(id='effects-chain-store', data=[]),
+
     dash.html.Div(id='dummy-output'),
     dash.html.Button(id='loading-state-reset-trigger', n_clicks=0, style={"display": "none"}),
 
@@ -39,21 +123,12 @@ app.layout = dash.html.Div([
 
         dash.html.Hr(),
         dash.html.H3("Effects chain"),
-        dash.html.Button("Build chain (delay -> reverb)", id="build-chain-btn"),
+        dash.html.Div(id='effects-chain-container'),
+        dash.dcc.Dropdown(id='add-effect-dropdown', options=[
+            {'label': 'Delay', 'value': 'delay'},
+            {'label': 'Reverb', 'value': 'reverb'}
+        ], placeholder='Select an effect to add...')
 
-        dash.html.Hr(),
-        dash.html.H3("Delay (ID: 'delay1')"),
-        dash.html.Label("Feedback (0-0.95)"),
-        dash.dcc.Slider(id="delay-feedback-slider", min=0, max=0.95, step=0.01, value=0.5),
-        dash.html.Label("Delay time (ms)"),
-        dash.dcc.Slider(id="delay-time-slider", min=50, max=1000, step=5, value=300),
-
-        dash.html.Hr(),
-        dash.html.H3("Reverb (ID: 'reverb1')"),
-        dash.html.Label("60dB decay time (s)"),
-        dash.dcc.Slider(id="reverb-rt60-slider", min=0.1, max=10.0, step=0.1, value=1.5),
-        dash.html.Label("Wet mix"),
-        dash.dcc.Slider(id="reverb-mix-slider", min=0.0, max=1.0, step=0.05, value=0.4),
     ], style={'width': '30%', 'float': 'left', 'padding': '10px'}),
 
     dash.html.Div([
@@ -78,18 +153,147 @@ app.layout = dash.html.Div([
 
 
 @app.callback(
+    dash.Output('effects-chain-container', 'children'),
+    dash.Input('effects-chain-store', 'data')
+)
+def update_effects_chain_ui(chain_data):
+    if not chain_data:
+        return dash.html.P("No effects in the chain")
+    count = len(chain_data)
+    return [create_effect_card(effect, i, count) for i, effect in enumerate(chain_data)]
+
+
+@app.callback(
+    dash.Output('effects-chain-store', 'data', allow_duplicate=True),
+    dash.Output('ws-commands-store', 'data', allow_duplicate=True),
+    dash.Output('add-effect-dropdown', 'value'),
+    dash.Input('add-effect-dropdown', 'value'),
+    dash.State('effects-chain-store', 'data'),
+    prevent_initial_call=True
+)
+def add_effect(effect_type, current_chain):
+    if not effect_type:
+        return dash.no_update, dash.no_update, None
+    
+    new_effect_id = str(uuid.uuid4())
+    new_effect = {
+        'effect_id': new_effect_id,
+        'type': effect_type,
+        'params': EFFECT_DEFAULTS[effect_type].copy() 
+    }
+    new_chain = current_chain + [new_effect]
+
+    command = {
+        'command': 'build_chain',
+        'config': new_chain
+    }
+    
+    return new_chain, command, None
+
+
+@app.callback(
+    dash.Output('effects-chain-store', 'data', allow_duplicate=True),
+    dash.Output('ws-commands-store', 'data', allow_duplicate=True),
+    dash.Input({'type': 'delete-effect-btn', 'index': dash.ALL}, 'n_clicks'),
+    dash.State('effects-chain-store', 'data'),
+    prevent_initial_call=True
+)
+def delete_effect(n_clicks, current_chain):
+    if not dash.ctx.triggered_id:
+        return dash.no_update, dash.no_update
+
+    # prevent deletion when the callback is trigger by adding a new effect
+    trigger_value = dash.ctx.triggered[0]['value']
+    if not trigger_value or trigger_value == 0:
+        return dash.no_update, dash.no_update
+        
+    effect_id_to_delete = dash.ctx.triggered_id['index']
+    new_chain = [effect for effect in current_chain if effect['effect_id'] != effect_id_to_delete]
+    command = {
+        'command': 'build_chain',
+        'config': new_chain
+    }
+    return new_chain, command
+
+
+@app.callback(
+    dash.Output('effects-chain-store', 'data', allow_duplicate=True),
+    dash.Output('ws-commands-store', 'data', allow_duplicate=True),
+    dash.Input({'type': 'move-up-btn', 'index': dash.ALL}, 'n_clicks'),
+    dash.Input({'type': 'move-down-btn', 'index': dash.ALL}, 'n_clicks'),
+    dash.State('effects-chain-store', 'data'),
+    prevent_initial_call=True
+)
+def reorder_effects(up_clicks, down_clicks, current_chain):
+    if not current_chain or not dash.ctx.triggered:
+        return dash.no_update, dash.no_update
+
+    # check that a click actually happened (ignore initial render)
+    trigger_value = dash.ctx.triggered[0]['value']
+    if not trigger_value or trigger_value == 0:
+        return dash.no_update, dash.no_update
+
+    trigger_id = dash.ctx.triggered_id
+    idx = trigger_id['index'] # type: ignore
+    action = trigger_id['type'] # type: ignore
+    
+    new_chain = copy.deepcopy(current_chain)
+    
+    # swap logic
+    if action == 'move-up-btn' and idx > 0:
+        new_chain[idx], new_chain[idx-1] = new_chain[idx-1], new_chain[idx]
+    elif action == 'move-down-btn' and idx < len(new_chain) - 1:
+        new_chain[idx], new_chain[idx+1] = new_chain[idx+1], new_chain[idx]
+    else:
+        return dash.no_update, dash.no_update
+
+    command = {'command': 'build_chain', 'config': new_chain}
+    return new_chain, command
+
+
+@app.callback(
+    dash.Output('effects-chain-store', 'data', allow_duplicate=True),
+    dash.Output('ws-commands-store', 'data', allow_duplicate=True),
+    dash.Input({'type': 'effect-param-slider', 'effect_id': dash.ALL, 'param': dash.ALL}, 'value'),
+    dash.State('effects-chain-store', 'data'),
+    prevent_initial_call=True
+)
+def update_parameter(value, current_chain):
+    if not dash.ctx.triggered_id:
+        return dash.no_update, dash.no_update
+    
+    # guard against race conditions when adding a new effect
+    effect_id = dash.ctx.triggered_id['effect_id']
+    if not effect_id or not current_chain or not any(eff['effect_id'] == effect_id for eff in current_chain):
+        return dash.no_update, dash.no_update
+
+    new_chain = copy.deepcopy(current_chain)
+    param_name = dash.ctx.triggered_id['param']
+    new_value = dash.ctx.triggered[0]['value']
+
+    for effect in new_chain:
+        if effect['effect_id'] == effect_id:
+            effect['params'][param_name] = new_value
+            break
+    
+    command = {
+        'command': 'update_param',
+        'effect_id': effect_id,
+        'param': param_name,
+        'value': new_value
+    }
+
+    return new_chain, command
+
+
+@app.callback(
     dash.Output('upload-audio', 'disabled'),
-    dash.Output('build-chain-btn', 'disabled'),
-    dash.Output('delay-feedback-slider', 'disabled'),
-    dash.Output('delay-time-slider', 'disabled'),
-    dash.Output('reverb-rt60-slider', 'disabled'),
-    dash.Output('reverb-mix-slider', 'disabled'),
     dash.Output('loading-spinner', 'children'),
     dash.Input('loading-state-store', 'data')
 )
 def control_ui_during_load(data):
     is_busy = data.get('busy', False) if data else False
-    return [is_busy] * 6 + [None]
+    return is_busy, None
 
 
 @app.callback(
@@ -131,84 +335,6 @@ def start_mic(n_clicks):
 )
 def stop_stream(n_clicks):
     return {'command': 'stop'}
-
-
-@app.callback(
-    dash.Output('ws-commands-store', 'data', allow_duplicate=True),
-    dash.Input('build-chain-btn', 'n_clicks'),
-    prevent_initial_call=True
-)
-def build_chain(n_clicks):
-    chain_config = [
-        {
-            "id": "delay1",
-            "type": "delay",
-            "params": { "max_delay_ms": 1500, "mix_dry": 0.7, "mix_wet": 0.5 }
-        },
-        {
-            "id": "reverb1",
-            "type": "reverb",
-            "params": { "mix_dry": 0.8, "mix_wet": 0.4 }
-        }
-    ]
-    return {'command': 'build_chain', 'config': chain_config}
-
-
-# update parameters
-@app.callback(
-    dash.Output('ws-commands-store', 'data', allow_duplicate=True),
-    dash.Input('delay-feedback-slider', 'value'),
-    prevent_initial_call=True
-)
-def update_delay_feedback(value):
-    return {
-        'command': 'update_param',
-        'effect_id': 'delay1',
-        'param': 'feedback',
-        'value': value
-    }
-
-
-@app.callback(
-    dash.Output('ws-commands-store', 'data', allow_duplicate=True),
-    dash.Input('delay-time-slider', 'value'),
-    prevent_initial_call=True
-)
-def update_delay_time(value):
-    return {
-        'command': 'update_param',
-        'effect_id': 'delay1',
-        'param': 'delay_ms',
-        'value': value
-    }
-
-
-@app.callback(
-    dash.Output('ws-commands-store', 'data', allow_duplicate=True),
-    dash.Input('reverb-rt60-slider', 'value'),
-    prevent_initial_call=True
-)
-def update_reverb_rt60(value):
-    return {
-        'command': 'update_param',
-        'effect_id': 'reverb1',
-        'param': 'rt60',
-        'value': value
-    }
-
-
-@app.callback(
-    dash.Output('ws-commands-store', 'data', allow_duplicate=True),
-    dash.Input('reverb-mix-slider', 'value'),
-    prevent_initial_call=True
-)
-def update_reverb_mix(value):
-    return {
-        'command': 'update_param',
-        'effect_id': 'reverb1',
-        'param': 'mix_wet',
-        'value': value
-    }
 
 
 @app.callback(

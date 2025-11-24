@@ -5,9 +5,10 @@
 - metrónomo, trabajar con bpm en vez de ms
 
 # frontend
-- build chain al cargar la pagina
-- wav file spectrum not working
+- build chain al cargar la pagina, aunque esté vacía
 - fix spectrum y range
 - fix time range
 - fix plot titles and axes
 - escuchar dry / mix (selector)
+- botón para reaplicar efectos al file // MEJOR hacer streaming con el file para que el backend aplique los efectos en vivo
+- slider / input numérico para editar parámetros
