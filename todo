@@ -10,7 +10,9 @@
 - exportar wav procesado
 - plot estereo
 - load examples -> rain
-- mover playback controls a audio source solo si en modo wav
 - stereo offset negativo
 - opcion para smooth spectrum
 - plots de file más suaves
+- donde esta el spinner??
+- octaver effect
+- scroll sidebar independientemente

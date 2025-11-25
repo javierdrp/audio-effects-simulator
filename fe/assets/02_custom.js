@@ -200,8 +200,8 @@ function attemptAttachAudioListeners() {
     const updatePlots = (e) => updatePlotsForPlaybackTime(e.target.currentTime);
 
     playerOrig.addEventListener('timeupdate', updatePlots);
-    playerProc.addEventListener('timeupdate', updatePlots);
     playerOrig.addEventListener('seeked', updatePlots);
+    playerProc.addEventListener('timeupdate', updatePlots);
     playerProc.addEventListener('seeked', updatePlots);
 
     playerOrig.dataset.hasListeners = "true";
@@ -228,10 +228,13 @@ function connectWebSocket() {
             fullAudioProcessed = data.processed_samples;
             currentFileSampleRate = data.sample_rate;
 
+            window.audioB64Original = data.original_b64;
+            window.audioB64Processed = data.processed_b64;
+
             const playerOrig = document.getElementById('player-original');
             const playerProc = document.getElementById('player-processed');
-            playerOrig.src = data.original_b64;
-            playerProc.src = data.processed_b64;
+            if (playerOrig) playerOrig.src = data.original_b64;
+            if (playerProc) playerProc.src = data.processed_b64;
 
             updatePlotsForPlaybackTime(0);
             

@@ -64,6 +64,7 @@ class AudioEngine:
         
         self.is_processing_file = True
         try:
+            print("Info: Processing WAV")
             content_type, content_string = contents.split(',')
             decoded_bytes = base64.b64decode(content_string)
 
@@ -115,6 +116,7 @@ class AudioEngine:
         except Exception as e:
             print(f"Error processing WAV file: {e}")
         finally:
+            print("Success: Finished processing WAV file")
             self.is_processing_file = False
 
     def update_param(self, effect_id: str, param_name: str, value: float):
