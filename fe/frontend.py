@@ -29,63 +29,55 @@ def create_effect_card(effect_data, index, total_count):
     effect_type = effect_data["type"]
     params = effect_data["params"]
 
-    controls = []
+    control_configs = []
     if effect_type == 'delay':
-        controls = [
-            dash.html.Label("Feedback (0-0.95)"),
-            dash.dcc.Slider(
-                id={'type': 'effect-param-slider', 'effect_id': effect_id, 'param': 'feedback'},
-                min=0, max=0.95, step=0.01, value=params['feedback']
-            ),
-            dash.html.Label("Delay time (ms)"),
-            dash.dcc.Slider(
-                id={'type': 'effect-param-slider', 'effect_id': effect_id, 'param': 'delay_ms'},
-                min=50, max=1000, step=5, value=params['delay_ms']
-            ),
-            dash.html.Label("Dry mix"),
-            dash.dcc.Slider(
-                id={'type': 'effect-param-slider', 'effect_id': effect_id, 'param': 'mix_dry'},
-                min=0, max=1, step=0.05, value=params['mix_dry']
-            ),
-            dash.html.Label("Wet mix"),
-            dash.dcc.Slider(
-                id={'type': 'effect-param-slider', 'effect_id': effect_id, 'param': 'mix_wet'},
-                min=0, max=1, step=0.05, value=params['mix_wet']
-            ),
-            dash.html.Label("Stereo offset"),
-            dash.dcc.Slider(
-                id={'type': 'effect-param-slider', 'effect_id': effect_id, 'param': 'offset_ms'},
-                min=0, max=1000, step=10, value=params['offset_ms']
-            ),
+        control_configs = [
+            # (param_key, label, min, max, step)
+            ('feedback', "Feedback", 0, 0.95, 0.01),
+            ('delay_ms', "Delay time (ms)", 50, 1000, 1),
+            ('mix_dry', "Dry mix", 0, 1, 0.01),
+            ('mix_wet', "Wet mix", 0, 1, 0.01),
+            ('offset_ms', "Stereo offset", 0, 1000, 1),
         ]
     elif effect_type == 'reverb':
-        controls = [
-            dash.html.Label("60dB decay time (s)"),
-            dash.dcc.Slider(
-                id={'type': 'effect-param-slider', 'effect_id': effect_id, 'param': 'rt60_s'},
-                min=0.1, max=10.0, step=0.1, value=params['rt60_s']
-            ),
-            dash.html.Label("Dry mix"),
-            dash.dcc.Slider(
-                id={'type': 'effect-param-slider', 'effect_id': effect_id, 'param': 'mix_dry'},
-                min=0, max=1, step=0.05, value=params['mix_dry']
-            ),
-            dash.html.Label("Wet mix"),
-            dash.dcc.Slider(
-                id={'type': 'effect-param-slider', 'effect_id': effect_id, 'param': 'mix_wet'},
-                min=0, max=1, step=0.05, value=params['mix_wet']
-            ),
-            dash.html.Label("Damping"),
-            dash.dcc.Slider(
-                id={'type': 'effect-param-slider', 'effect_id': effect_id, 'param': 'damp'},
-                min=0, max=0.95, step=0.05, value=params['damp']
-            ),
-            dash.html.Label("Pre-delay (ms)"),
-            dash.dcc.Slider(
-                id={'type': 'effect-param-slider', 'effect_id': effect_id, 'param': 'pre_delay_ms'},
-                min=0, max=100, step=0.05, value=params['pre_delay_ms']
-            ),
+        control_configs = [
+            ('rt60_s', "60dB decay time (s)", 0.1, 10.0, 0.1),
+            ('mix_dry', "Dry mix", 0, 1, 0.01),
+            ('mix_wet', "Wet mix", 0, 1, 0.01),
+            ('damp', "Damping", 0, 0.95, 0.01),
+            ('pre_delay_ms', "Pre-delay (ms)", 0, 100, 1),
         ]
+
+    controls_ui = []
+    for param_key, label, min, max, step in control_configs:
+        current_val = params.get(param_key, min)
+
+        control_row = dash.html.Div([
+            dash.html.Label(label, style={'fontWeight': 'bold', 'marginTop': '10px', 'display': 'block'}),
+            dash.html.Div([
+                dash.html.Div([
+                    dash.dcc.Slider(
+                        id={'type': 'effect-param-slider', 'effect_id': effect_id, 'param': param_key},
+                        min=min,
+                        max=max,
+                        step=step,
+                        value=current_val,
+                        marks={min: str(min), max: str(max)},
+                        tooltip={"placement": "bottom", "always_visible": False}
+                    )
+                ], style={'flex': '1', 'paddingRight': '15px'}),
+                dash.dcc.Input(
+                    id={'type': 'effect-param-input', 'effect_id': effect_id, 'param': param_key},
+                    type="number",
+                    min=min,
+                    max=max,
+                    step=step,
+                    value=current_val,
+                    style={'width': '70px', 'height': '30px'}
+                )
+            ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '5px'})
+        ])
+        controls_ui.append(control_row)
 
     up_visibility = "hidden" if (index == 0) else "visible"
     down_visibility = "hidden" if (index == total_count - 1) else "visible"
@@ -94,7 +86,7 @@ def create_effect_card(effect_data, index, total_count):
         id={'type': 'effect-card-container', 'index': effect_id},
         className='effect-card',
         children=[
-            dash.html.H4(f"{effect_type.title()} effect", style={'display': 'inline-block', 'marginRight': '20px'}),
+            dash.html.H3(f"{effect_type.title()} effect", style={'display': 'inline-block', 'marginRight': '20px'}),
             # UP BUTTON
             dash.html.Button(
                 "↑", id={'type': 'move-up-btn', 'index': index}, 
@@ -109,26 +101,29 @@ def create_effect_card(effect_data, index, total_count):
             ),
             # DELETE BUTTON
             dash.html.Button("X", id={'type': 'delete-effect-btn', 'index': effect_id}, n_clicks=0),
-            *controls
+            *controls_ui
         ],
-        style={'border': '1px solid #ddd', 'padding': '10px', 'marginBottom': '10px', 'borderRadius': '5px'}
+        style={'border': '1px solid #ccc', 'padding': '15px', 'marginBottom': '15px', 'borderRadius': '8px', 'backgroundColor': '#f9f9f9'}
     )
 
 
 app.layout = dash.html.Div([
 
-    dash.html.H1("Audio effects visualizer"),
-
     dash.dcc.Store(id='ws-commands-store'),
     dash.dcc.Store(id='loading-state-store'),
     dash.dcc.Store(id='effects-chain-store', data=[]),
 
-    dash.html.Div(id='dummy-output'),
+    dash.html.Div(id='dummy-output', style={'display': 'none'}),
+    dash.html.Div(id='dummy-player-control', style={'display': 'none'}),
+    dash.html.Div(id='dummy-sync-players', style={'display': 'none'}),
     dash.html.Button(id='loading-state-reset-trigger', n_clicks=0, style={"display": "none"}),
 
     # control panel
     dash.html.Div([
-        dash.html.H3("Audio source"),
+        dash.html.H1("Audio effects visualizer"),
+        dash.html.Hr(),
+        dash.html.Hr(),
+        dash.html.H2("Audio source"),
         dash.dcc.RadioItems(id="source-mode-selector", options=[
             {"label": " Microphone (live)", "value": "mic"},
             {"label": "WAV file", "value": "file"}
@@ -144,38 +139,34 @@ app.layout = dash.html.Div([
                 style={
                     'width': '100%', 'height': '60px', 'lineHeight': '60px',
                     'borderWidth': '1px', 'borderStyle': 'dashed',
-                    'borderRadius': '5px', 'textAlign': 'center', 'margin': '10px 0'
+                    'borderRadius': '5px', 'textAlign': 'center', 'margin': '10px 0',
+                    'cursor': 'pointer'
                 }
             ),
             dash.html.Div(id="output-filename"),
-            dash.dcc.Loading(id='loading-spinner', type='circle', children=dash.html.Div(id='loading-output'))
+            dash.dcc.Loading(id='loading-spinner', type='circle', children=dash.html.Div(id='loading-output')),
+
+            dash.html.Div([
+                dash.html.Label("Original audio", style={'fontWeight': 'bold'}),
+                dash.html.Audio(id="player-original", controls=True, style={"width": "100%", "marginTop": "5px"})
+            ], style={"marginTop": "15px"}),
+            dash.html.Div([
+                dash.html.Label("Processed audio", style={'fontWeight': 'bold'}),
+                dash.html.Audio(id="player-processed", controls=True, style={"width": "100%", "marginTop": "5px"})
+            ], style={"marginTop": "15px"})
         ]),
 
         dash.html.Hr(),
-        dash.html.H3("Effects chain"),
+        dash.html.H2("Effects chain"),
         dash.html.Div(id='effects-chain-container', children=[]),
         dash.dcc.Dropdown(id='add-effect-dropdown', options=[
             {'label': 'Delay', 'value': 'delay'},
             {'label': 'Reverb', 'value': 'reverb'}
         ], placeholder='Select an effect to add...')
 
-    ], style={'width': '30%', 'float': 'left', 'padding': '10px'}),
+    ], style={'width': '30%', 'float': 'left'}),
 
     dash.html.Div([
-        dash.html.H3("Audio playback"),
-        dash.html.Div([
-            dash.html.Div([
-                dash.html.Label("Original audio"),
-                dash.html.Audio(id="player-original", controls=True, style={"width": "100%"})
-            ], style={"flex": 1, "minWidth": "250px"}),
-            dash.html.Div([
-                dash.html.Label("Processed audio"),
-                dash.html.Audio(id="player-processed", controls=True, style={"width": "100%"})
-            ], style={"flex": 1, "minWidth": "250px"})
-        ], style={"display": "flex", "gap": "20px", "flexWrap": "wrap"}),
-
-        dash.html.Hr(),
-        dash.html.H3("Real-time visualization"),
         dash.dcc.Graph(id='time-domain-graph'),
         dash.dcc.Graph(id='spectrum-graph'),
     ], style={'width': '65%', 'float': 'right'})
@@ -289,6 +280,22 @@ def reorder_effects(up_clicks, down_clicks, current_chain):
 
     command = {'command': 'build_chain', 'config': new_chain}
     return new_chain, command
+
+
+@app.callback(
+    dash.Output({'type': 'effect-param-slider', 'effect_id': dash.MATCH, 'param': dash.MATCH}, 'value'),
+    dash.Output({'type': 'effect-param-input', 'effect_id': dash.MATCH, 'param': dash.MATCH}, 'value'),
+    dash.Input({'type': 'effect-param-slider', 'effect_id': dash.MATCH, 'param': dash.MATCH}, 'value'),
+    dash.Input({'type': 'effect-param-input', 'effect_id': dash.MATCH, 'param': dash.MATCH}, 'value'),
+    prevent_initial_call=True
+)
+def sync_slider_and_input(slider_value, input_value):
+    trigger_id = dash.ctx.triggered_id
+    if not trigger_id:
+        return dash.no_update, dash.no_update
+    
+    value = slider_value if trigger_id['type'] == 'effect-param-slider' else input_value
+    return value, value
 
 
 @app.callback(
@@ -416,6 +423,48 @@ dash.clientside_callback(
     dash.Output('output-filename', 'children'),
     dash.Input('upload-audio', 'contents'),
     dash.State('upload-audio', 'filename'),
+    prevent_initial_call=True
+)
+
+
+dash.clientside_callback(
+    """
+    (mode) => {
+        if (mode === 'mic') {
+            const p1 = document.getElementById('player-original');
+            const p2 = document.getElementById('player-processed');
+            if (p1) p1.pause();
+            if (p2) p2.pause();
+        }
+        return window.dash_clientside.no_update;
+    }
+    """,
+    dash.Output('dummy-player-control', 'children'),
+    dash.Input('source-mode-selector', 'value'),
+    prevent_initial_call=True
+)
+
+
+dash.clientside_callback(
+    """
+    (mode) => {
+        const p1 = document.getElementById('player-original');
+        const p2 = document.getElementById('player-processed');
+        
+        if (!p1 || !p2) return window.dash_clientside.no_update;
+
+        // prevent attaching listeners multiple times
+        if (p1.dataset.syncInit === "true") return window.dash_clientside.no_update;
+
+        p1.addEventListener('play', () => { p2.pause(); });
+        p2.addEventListener('play', () => { p1.pause(); });
+
+        p1.dataset.syncInit = "true";
+        return window.dash_clientside.no_update;
+    }
+    """,
+    dash.Output('dummy-sync-players', 'children'),
+    dash.Input('source-mode-selector', 'value'),
     prevent_initial_call=True
 )
 

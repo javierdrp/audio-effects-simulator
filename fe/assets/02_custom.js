@@ -2,9 +2,26 @@
 
 let ws;
 
+const PLOT_WINDOW_SIZE = 8192;  // 85ms window
+const AUDIO_SAMPLE_RATE_DEFAULT = 48000;
+
+// realtime ring buffers for plotting
+let rtInputBuffer = new Array(PLOT_WINDOW_SIZE).fill(0);
+let rtOutputBuffer = new Array(PLOT_WINDOW_SIZE).fill(0);
+
+// file playback
 let fullAudioOriginal = [];
 let fullAudioProcessed = [];
-let audioSampleRate = 48000;
+let currentFileSampleRate = AUDIO_SAMPLE_RATE_DEFAULT;
+
+const COMMON_LAYOUT = {
+    font: { family: 'Arial, sans-serif', size: 12, color: '#333' },
+    plot_bgcolor: '#fcfcfc',
+    paper_bgcolor: '#ffffff',
+    margin: { l: 80, r: 20, t: 60, b: 60 },
+    showlegend: true,
+    legend: { x: 1, y: 1, xanchor: 'right' }
+};
 
 function calculateSpectrum(signal, sampleRate) {
     const n_fft = signal.length;
@@ -35,74 +52,159 @@ function calculateSpectrum(signal, sampleRate) {
 
         freqs[k] = k * (sampleRate / n_fft);
 
-        magnitudesDB[k] = 20 * Math.log10(magnitude + 1e-9)  // add small value to prevent log(0);
+        const normalized = magnitude / n_fft;
+        magnitudesDB[k] = 20 * Math.log10(normalized + 1e-9)  // convert to dB and add small value to prevent log(0);
     }
 
     return { freqs, magnitudesDB };
+}
+
+function pushToRingBuffer(buffer, newChunk) {
+    // remove first N elements
+    buffer.splice(0, newChunk.length);
+    // add N elements to the end
+    for (let i = 0; i < newChunk.length; i++) buffer.push(newChunk[i]);
+}
+
+function renderPlots(inputData, outputData, sampleRate, isRealTime) {
+
+    if (typeof Plotly === 'undefined') return;
+    
+    const graphDiv1 = document.getElementById('time-domain-graph');
+    const graphDiv2 = document.getElementById('spectrum-graph');
+    
+    if (!graphDiv1 || !graphDiv2) return;
+
+    // time domain plot
+    const time_axis = Array.from({length: inputData.length}, (_, i) => i / sampleRate);
+
+    Plotly.react('time-domain-graph', [{
+        x: time_axis,
+        y: inputData,
+        name: 'Original',
+        type: 'scatter',
+        line: {width: 2.0, color: '#002288'},
+        opacity: 0.8
+    }, {
+        x: time_axis,
+        y: outputData,
+        name: 'Processed',
+        type: 'scatter',
+        line: {width: 1.5, color: '#dd2222'},
+        opacity: 0.8
+    }],
+    {
+        ...COMMON_LAYOUT,
+        title: {
+            text: 'Time Domain Analysis',
+            y: 0.95,
+            x: 0.5,
+            xanchor: 'center',
+            yanchor: 'top'
+        },
+        xaxis: {
+            title: { text: 'Time window (s)', standoff: 15 },
+            automargin: true,
+            showgrid: true,
+            gridcolor: '#eee',
+            zeroline: true,
+            zerolinecolor: '#999'
+        },
+        yaxis: {
+            title: { text: 'Amplitude (normalized)', standoff: 15 },
+            automargin: true,
+            range: [-1.05, 1.05],
+            autorange: false,
+            showgrid: true,
+            gridcolor: '#eee',
+            zeroline: true,
+            zerolinecolor: '#333'
+        }
+    });
+
+    // frequency domain plot
+    const specIn = calculateSpectrum(inputData, sampleRate);
+    const specOut = calculateSpectrum(outputData, sampleRate);
+
+    Plotly.react('spectrum-graph', [{
+        x: specIn.freqs,
+        y: specIn.magnitudesDB,
+        name: 'Original',
+        type: 'scatter',
+        mode: 'lines',
+        line: {width: 1.5, color: '#002288'},
+        fill: 'tozeroy',
+        fillcolor: 'rgba(31, 119, 180, 0.1)'
+    }, {
+        x: specOut.freqs,
+        y: specOut.magnitudesDB,
+        name: 'Processed',
+        type: 'scatter',
+        mode: 'lines',
+        line: {width: 1.5, color: '#dd2222'}
+    }],
+    {
+        ...COMMON_LAYOUT,
+        title: {
+            text: 'Frequency Spectrum (FFT)',
+            y: 0.95,
+            x: 0.5,
+            xanchor: 'center',
+            yanchor: 'top'
+        },
+        xaxis: {
+            title: { text: 'Frequency (Hz)', standoff: 15 },
+            automargin: true,
+            type: 'log',
+            range: [Math.log10(20), Math.log10(sampleRate / 2)],
+            showgrid: true,
+            gridcolor: '#eee'
+        },
+        yaxis: {
+            title: { text: 'Magnitude (dBFS)', standoff: 15 },
+            automargin: true,
+            range: [-100, 0],
+            autorange: false,
+            showgrid: true,
+            gridcolor: '#eee'
+        }
+    });
+
+
 }
 
 function updatePlotsForPlaybackTime(currentTime) {
     if (fullAudioOriginal.length === 0) return;
 
     const plotBlockSize = 1024;
-    const startIndex = Math.floor(currentTime * audioSampleRate);
+    const startIndex = Math.floor(currentTime * currentFileSampleRate);
 
     if (startIndex + plotBlockSize > fullAudioOriginal.length) return;
 
     const originalSlice = fullAudioOriginal.slice(startIndex, startIndex + plotBlockSize);
     const processedSlice = fullAudioProcessed.slice(startIndex, startIndex + plotBlockSize);
 
-    const time_axis = Array.from({length: plotBlockSize}, (_, i) => currentTime + (i / audioSampleRate));
+    renderPlots(originalSlice, processedSlice, currentFileSampleRate, false);
+}
 
-    Plotly.react('time-domain-graph', [{
-        x: time_axis,
-        y: originalSlice,
-        name: 'Input',
-        type: 'scatter',
-        line: {width: 1}
-    }, {
-        x: time_axis,
-        y: processedSlice,
-        name: 'Processed output',
-        type: 'scatter',
-        line: {width: 1}
-    }], 
-    {
-        title: 'Time-domain signal',
-        margin: {l: 40, r: 20, t: 40, b: 40},
-        xaxis: {title: 'Tiempo (s)'},
-        yaxis: {title: 'Amplitud', range: [-1, 1], autorange: false}
-    });
+function attemptAttachAudioListeners() {
+    const playerOrig = document.getElementById('player-original');
+    const playerProc = document.getElementById('player-processed');
 
-    const spectrumInput = calculateSpectrum(originalSlice, audioSampleRate);
-    const spectrumOutput = calculateSpectrum(processedSlice, audioSampleRate);
+    if (!playerOrig || !playerProc) {
+        setTimeout(attemptAttachAudioListeners, 200);
+        return;
+    }
+    if (playerOrig.dataset.hasListeners === "true") return;
 
-    Plotly.react('spectrum-graph', [{
-        x: spectrumInput.freqs,
-        y: spectrumInput.magnitudesDB,
-        name: 'Input',
-        type: 'scatter',
-        line: {width: 1}
-    }, {
-        x: spectrumOutput.freqs,
-        y: spectrumOutput.magnitudesDB,
-        name: 'Processed output',
-        type: 'scatter',
-        line: {width: 1}
-    }, {
-        title: 'Signal spectrum',
-        margin: {l: 40, r: 20, t: 40, b: 40},
-        xaxis: {
-            title: 'Frequency (Hz)',
-            type: 'log',
-            range: [Math.log10(20), Math.log10(audioSampleRate/2)]  // audible range
-        },
-        yaxis: {
-            title: 'Magnitude (dB)',
-            range: [-100, 0],
-            autorange: false
-        }
-    }]);
+    const updatePlots = (e) => updatePlotsForPlaybackTime(e.target.currentTime);
+
+    playerOrig.addEventListener('timeupdate', updatePlots);
+    playerProc.addEventListener('timeupdate', updatePlots);
+    playerOrig.addEventListener('seeked', updatePlots);
+    playerProc.addEventListener('seeked', updatePlots);
+
+    playerOrig.dataset.hasListeners = "true";
 }
 
 function connectWebSocket() {
@@ -111,85 +213,25 @@ function connectWebSocket() {
     ws.onopen = (event) => {
         console.log("Connected to audio backend");
 
-        const playerOrig = document.getElementById('player-original');
-        const playerProc = document.getElementById('player-processed');
-
-        const updatePlots = (e) => updatePlotsForPlaybackTime(e.target.currentTime);
-
-        playerOrig.addEventListener('timeupdate', updatePlots);
-        playerProc.addEventListener('timeupdate', updatePlots);
-        playerOrig.addEventListener('seeked', updatePlots);
-        playerProc.addEventListener('seeked', updatePlots);
+        attemptAttachAudioListeners();
     };
 
     ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
+
         if (data.type === "plot_data") {
-            // update plot data
-            const n_points = data.input.length;
-            const fs = data.sample_rate;
-            const time_axis = Array.from({length: n_points}, (_, i) => i / fs);
-
-            // update plots with plotly.react
-            Plotly.react('time-domain-graph', [{
-                x: time_axis,
-                y: data.input,
-                name: 'Input',
-                type: 'scatter',
-                line: {width: 1}
-            }, {
-                x: time_axis,
-                y: data.output,
-                name: 'Processed output',
-                type: 'scatter',
-                line: {width: 1}
-            }], 
-            {
-                title: 'Time-domain signal',
-                margin: {l: 40, r: 20, t: 40, b: 40},
-                xaxis: {title: 'Tiempo (s)'},
-                yaxis: {title: 'Amplitud', range: [-1, 1], autorange: false}
-            });
-
-            // calculate spectrum
-            const spectrumInput = calculateSpectrum(data.input, fs);
-            const spectrumOutput = calculateSpectrum(data.output, fs);
-
-            Plotly.react('spectrum-graph', [{
-                x: spectrumInput.freqs,
-                y: spectrumInput.magnitudesDB,
-                name: 'Input',
-                type: 'scatter',
-                line: {width: 1}
-            }, {
-                x: spectrumOutput.freqs,
-                y: spectrumOutput.magnitudesDB,
-                name: 'Processed output',
-                type: 'scatter',
-                line: {width: 1}
-            }, {
-                title: 'Signal spectrum',
-                margin: {l: 40, r: 20, t: 40, b: 40},
-                xaxis: {
-                    title: 'Frequency (Hz)',
-                    type: 'log',
-                    range: [Math.log10(20), Math.log10(fs/2)]  // audible range
-                },
-                yaxis: {
-                    title: 'Magnitude (dB)',
-                    range: [-100, 0],
-                    autorange: false
-                }
-            }]);
+            pushToRingBuffer(rtInputBuffer, data.input);
+            pushToRingBuffer(rtOutputBuffer, data.output);
+            renderPlots(rtInputBuffer, rtOutputBuffer, data.sample_rate, true);
         } else if (data.type === "file_processed") {
             fullAudioOriginal = data.original_samples;
             fullAudioProcessed = data.processed_samples;
-            audioSampleRate = data.sample_rate;
+            currentFileSampleRate = data.sample_rate;
 
-            const player_orig = document.getElementById('player-original');
-            const player_proc = document.getElementById('player-processed');
-            player_orig.src = data.original_b64;
-            player_proc.src = data.processed_b64;
+            const playerOrig = document.getElementById('player-original');
+            const playerProc = document.getElementById('player-processed');
+            playerOrig.src = data.original_b64;
+            playerProc.src = data.processed_b64;
 
             updatePlotsForPlaybackTime(0);
             
