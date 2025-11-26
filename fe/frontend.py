@@ -585,13 +585,14 @@ def manage_presets(n_clicks, presets_data, new_name, current_chain):
 @app.callback(
     dash.Output('effects-chain-store', 'data', allow_duplicate=True),
     dash.Output('ws-commands-store', 'data', allow_duplicate=True),
+    dash.Output('preset-selector', 'value'),
     dash.Input('preset-selector', 'value'),
     dash.State('presets-store', 'data'),
     prevent_initial_call=True
 )
 def load_preset(selected_preset_name, presets_data):
     if not selected_preset_name or not presets_data:
-        return dash.no_update, dash.no_update
+        return dash.no_update, dash.no_update, dash.no_update
     
     if selected_preset_name in presets_data:
         # Get chain
@@ -603,9 +604,9 @@ def load_preset(selected_preset_name, presets_data):
             effect['effect_id'] = str(uuid.uuid4())
 
         command = {'command': 'build_chain', 'config': new_chain}
-        return new_chain, command
+        return new_chain, command, None
     
-    return dash.no_update, dash.no_update
+    return dash.no_update, dash.no_update, dash.no_update
 
 
 # command sender
