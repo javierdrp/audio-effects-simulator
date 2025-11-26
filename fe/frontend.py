@@ -17,8 +17,16 @@ EFFECT_DEFAULTS = {
             'mix_dry': 0.8,
             'damp': 0.3,
             'pre_delay_ms': 0.0
-            }
-        # --- ADD DEFAULTS FOR ANY NEW EFFECTS HERE ---
+            },
+        'gate': {
+            'threshold_db': -30.0,
+            'attack_ms': 10.0,
+            'release_ms': 100.0
+            },
+    'spectral': {
+        'threshold_db': -45.0,
+        'reduction': 0.2  # Keep 20% of the noise (sounds more natural)
+    }
         }
 
 app = dash.Dash(__name__)
@@ -47,6 +55,17 @@ def create_effect_card(effect_data, index, total_count):
                 ('damp', "Damping", 0, 0.95, 0.01),
                 ('pre_delay_ms', "Pre-delay (ms)", 0, 100, 1),
                 ]
+    elif effect_type == 'gate':
+        control_configs = [
+            ('threshold_db', "Threshold (dB)", -60, 0, 1),
+            ('attack_ms', "Attack (ms)", 1, 500, 1),
+            ('release_ms', "Release (ms)", 10, 1000, 10),
+        ]
+    elif effect_type == 'spectral':
+        control_configs = [
+            ('threshold_db', "Noise Threshold (dB)", -80, 0, 1),
+            ('reduction', "Noise Floor (0=Silence, 1=Orig)", 0.0, 1.0, 0.05),
+        ]
 
     controls_ui = []
     for param_key, label, min, max, step in control_configs:
@@ -170,7 +189,9 @@ app.layout = dash.html.Div([
             dash.html.Div(id='effects-chain-container', children=[]),
             dash.dcc.Dropdown(id='add-effect-dropdown', options=[
                 {'label': 'Delay', 'value': 'delay'},
-                {'label': 'Reverb', 'value': 'reverb'}
+                {'label': 'Reverb', 'value': 'reverb'},
+                {'label': 'Noise Gate', 'value': 'gate'},
+                {'label': 'Spectral Filter', 'value': 'spectral'}
                 ], placeholder='Select an effect to add...')
 
         ], style={

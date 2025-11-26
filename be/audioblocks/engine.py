@@ -45,7 +45,8 @@ class AudioEngine:
 
             if effect_type == 'delay': fx = ab.StereoDelayEffect(**params)
             elif effect_type == 'reverb': fx = ab.ReverbEffect(**params)
-            #  add other effects here
+            elif effect_type == 'gate': fx = ab.NoiseGateEffect(**params)
+            elif effect_type == 'spectral': fx = ab.SpectralFilter(**params)
             else: continue
             chain.add(fx)
 
@@ -81,10 +82,10 @@ class AudioEngine:
             chain = ab.EffectsChain(fs, ch_in, ch_out, file_blocksize)
             for config in self.last_chain_config:
                 effect_type, params = config.get('type'), config.get('params', {})
-                if effect_type == "delay":
-                    fx = ab.StereoDelayEffect(**params)
-                elif effect_type == "reverb":
-                    fx = ab.ReverbEffect(**params)
+                if effect_type == "delay": fx = ab.StereoDelayEffect(**params)
+                elif effect_type == "reverb": fx = ab.ReverbEffect(**params)
+                elif effect_type == "gate": fx = ab.NoiseGateEffect(**params)
+                elif effect_type == "spectral": fx = ab.SpectralFilter(**params)
                 else: continue
                 chain.add(fx)
             chain.warmup()
