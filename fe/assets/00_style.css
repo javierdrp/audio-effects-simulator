@@ -1,0 +1,54 @@
+.loader-spinner {
+    border: 5px solid #f3f3f3; /* Light grey */
+    border-top: 5px solid #007bff; /* Blue */
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 10px auto;
+}
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.btn-control {
+    border: none;
+    color: white;
+    padding: 10px 15px;
+    text-align: center;
+    text-decoration: none;
+    font-size: 15px;
+    font-weight: 600;
+    margin: 5px 0;
+    cursor: pointer;
+    border-radius: 8px; /* Softer rounded corners */
+    transition: all 0.2s ease;
+    flex: 1; /* Makes buttons equal width */
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    margin: 5px;
+}
+
+.btn-start {
+    background-color: #81c784; /* Soft Green (Material 300) */
+}
+.btn-start:hover {
+    background-color: #66bb6a; /* Slightly darker on hover */
+    transform: translateY(-1px);
+}
+.btn-start:active {
+    background-color: #4caf50;
+    transform: translateY(0);
+}
+
+.btn-stop {
+    background-color: #e57373; /* Soft Red (Material 300) */
+}
+.btn-stop:hover {
+    background-color: #ef5350; /* Slightly darker on hover */
+    transform: translateY(-1px);
+}
+.btn-stop:active {
+    background-color: #f44336;
+    transform: translateY(0);
+}

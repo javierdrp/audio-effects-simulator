@@ -158,8 +158,18 @@ app.layout = dash.html.Div([
                 {"label": "WAV file", "value": "file"}
                 ], value="mic", labelStyle={"display": "block"}),
             dash.html.Div(id="mic-controls", children=[
-                dash.html.Button("Start microphone", id="start-mic-btn", n_clicks=0),
-                dash.html.Button("Stop stream", id="stop-stream-btn", n_clicks=0)
+                dash.html.Button(
+                    "▶ Start Microphone", 
+                    id="start-mic-btn", 
+                    n_clicks=0, 
+                    className="btn-control btn-start"
+                ),
+                dash.html.Button(
+                    "■ Stop Stream", 
+                    id="stop-stream-btn", 
+                    n_clicks=0, 
+                    className="btn-control btn-stop"
+                )
                 ]),
             dash.html.Div(id="file-controls", children=[
                 dash.dcc.Upload(
@@ -173,7 +183,11 @@ app.layout = dash.html.Div([
                         }
                     ),
                 dash.html.Div(id="output-filename"),
-                dash.dcc.Loading(id='loading-spinner', type='circle', children=dash.html.Div(id='loading-output')),
+
+                dash.html.Div(id='processing-status', children=[
+                    dash.html.Div(className='loader-spinner'),  # CSS Class defined above
+                    dash.html.Div("Processing...", style={'fontSize': '14px', 'color': '#666'})
+                ], style={'display': 'none', 'textAlign': 'center', 'padding': '20px'}),
 
                 dash.html.Hr(),
                 dash.html.Label("Playback Monitor:", style={'fontWeight': 'bold'}),
@@ -419,12 +433,17 @@ def update_parameter(value, current_chain):
 
 @app.callback(
         dash.Output('upload-audio', 'disabled'),
-        dash.Output('loading-spinner', 'children'),
+        dash.Output('processing-status', 'style'),
         dash.Input('loading-state-store', 'data')
         )
 def control_ui_during_load(data):
     is_busy = data.get('busy', False) if data else False
-    return is_busy, None
+    
+    # Toggle display between 'none' and 'block'
+    spinner_style = {'display': 'block', 'textAlign': 'center', 'padding': '15px', 'backgroundColor': '#f0f8ff', 'borderRadius': '5px'}
+    hidden_style = {'display': 'none'}
+    
+    return is_busy, (spinner_style if is_busy else hidden_style)
 
 
 @app.callback(
@@ -434,7 +453,7 @@ def control_ui_during_load(data):
         )
 def toggle_source_controls(mode):
     if mode == 'mic':
-        return {"display": "block"}, {"display": "none"}
+        return {"display": "flex"}, {"display": "none"}
     else:
         return {"display": "none"}, {"display": "block"}
 
@@ -502,7 +521,7 @@ dash.clientside_callback(
                 }
 
             window.dash_clientside.ws_sender.send_command(command);
-            return [{'busy': true}, `Processing: ${filename}`, null];
+            return [{'busy': true}, `File uploaded: ${filename}`, null];
             }
         """,
         dash.Output('loading-state-store', 'data'),

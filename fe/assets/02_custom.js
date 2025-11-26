@@ -14,6 +14,8 @@ let fullAudioOriginal = [];
 let fullAudioProcessed = [];
 let currentFileSampleRate = AUDIO_SAMPLE_RATE_DEFAULT;
 
+let playbackRafId = null;
+
 const COMMON_LAYOUT = {
     font: { family: 'Arial, sans-serif', size: 12, color: '#333' },
     plot_bgcolor: '#fcfcfc',
@@ -176,7 +178,7 @@ function renderPlots(inputData, outputData, sampleRate, isRealTime) {
 function updatePlotsForPlaybackTime(currentTime) {
     if (fullAudioOriginal.length === 0) return;
 
-    const plotBlockSize = 1024;
+    const plotBlockSize = 2048;
     const startIndex = Math.floor(currentTime * currentFileSampleRate);
 
     if (startIndex + plotBlockSize > fullAudioOriginal.length) return;
@@ -197,12 +199,51 @@ function attemptAttachAudioListeners() {
     }
     if (playerOrig.dataset.hasListeners === "true") return;
 
-    const updatePlots = (e) => updatePlotsForPlaybackTime(e.target.currentTime);
+    const handleStateChange = () => {
+        const isAnyPlaying = !playerOrig.paused || !playerProc.paused;
 
-    playerOrig.addEventListener('timeupdate', updatePlots);
-    playerOrig.addEventListener('seeked', updatePlots);
-    playerProc.addEventListener('timeupdate', updatePlots);
-    playerProc.addEventListener('seeked', updatePlots);
+        if (isAnyPlaying) {
+            // Only start if not already running
+            if (playbackRafId === null) {
+                const loop = () => {
+                    let activeTime = 0;
+                    let playing = false;
+
+                    if (!playerOrig.paused) {
+                        activeTime = playerOrig.currentTime;
+                        playing = true;
+                    } else if (!playerProc.paused) {
+                        activeTime = playerProc.currentTime;
+                        playing = true;
+                    }
+
+                    if (playing) {
+                        updatePlotsForPlaybackTime(activeTime);
+                        playbackRafId = requestAnimationFrame(loop);
+                    } else {
+                        playbackRafId = null;
+                    }
+                };
+                loop(); // Start loop
+            }
+        } else {
+            // Stop only if NO player is playing
+            if (playbackRafId !== null) {
+                cancelAnimationFrame(playbackRafId);
+                playbackRafId = null;
+            }
+        }
+    };
+
+    const singleUpdate = (e) => updatePlotsForPlaybackTime(e.target.currentTime);
+
+    [playerOrig, playerProc].forEach(player => {
+        player.addEventListener('play', handleStateChange);
+        player.addEventListener('pause', handleStateChange);
+        player.addEventListener('ended', handleStateChange);
+        player.addEventListener('seeked', singleUpdate);   // Update immediately on release
+        player.addEventListener('seeking', singleUpdate);  // Update while dragging slider
+    });
 
     playerOrig.dataset.hasListeners = "true";
 }
