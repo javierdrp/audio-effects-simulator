@@ -178,7 +178,7 @@ function renderPlots(inputData, outputData, sampleRate, isRealTime) {
 function updatePlotsForPlaybackTime(currentTime) {
     if (fullAudioOriginal.length === 0) return;
 
-    const plotBlockSize = 2048;
+    const plotBlockSize = 1024;
     const startIndex = Math.floor(currentTime * currentFileSampleRate);
 
     if (startIndex + plotBlockSize > fullAudioOriginal.length) return;

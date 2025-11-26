@@ -33,6 +33,24 @@ EFFECT_DEFAULTS = {
             }
         }
 
+DEFAULT_PRESETS = {
+    "Robot Voice": [
+        {'effect_id': 'p1', 'type': 'gate', 'params': {'threshold_db': -30, 'attack_ms': 10, 'release_ms': 100}},
+        {'effect_id': 'p2', 'type': 'octaver', 'params': {'semitones': -12, 'mix': 1.0}},
+        {'effect_id': 'p3', 'type': 'delay', 'params': {'delay_ms': 120, 'feedback': 0.3, 'mix_wet': 0.3, 'mix_dry': 1.0, 'offset_ms': 10}}
+    ],
+    "Cathedral": [
+        {'effect_id': 'p4', 'type': 'reverb', 'params': {'rt60_s': 4.0, 'mix_wet': 0.6, 'mix_dry': 0.6, 'damp': 0.2, 'pre_delay_ms': 20}}
+    ],
+    "Slapback Echo": [
+        {'effect_id': 'p5', 'type': 'delay', 'params': {'delay_ms': 100, 'feedback': 0.0, 'mix_wet': 0.5, 'mix_dry': 1.0, 'offset_ms': 0}}
+    ],
+    "Clean Noise Removal": [
+        {'effect_id': 'p6', 'type': 'spectral', 'params': {'threshold_db': -50, 'reduction': 0.1}},
+        {'effect_id': 'p7', 'type': 'gate', 'params': {'threshold_db': -40, 'attack_ms': 5, 'release_ms': 200}}
+    ]
+}
+
 app = dash.Dash(__name__)
 
 
@@ -140,6 +158,7 @@ app.layout = dash.html.Div([
     dash.dcc.Store(id='ws-commands-store'),
     dash.dcc.Store(id='loading-state-store'),
     dash.dcc.Store(id='effects-chain-store', data=[]),
+    dash.dcc.Store(id='presets-store', storage_type='local', data=DEFAULT_PRESETS),
 
     dash.html.Div(id='dummy-output', style={'display': 'none'}),
     dash.html.Div(id='dummy-player-control', style={'display': 'none'}),
@@ -206,6 +225,45 @@ app.layout = dash.html.Div([
                     dash.html.Audio(id="player-processed", controls=True, style={"width": "100%", "display": "block"})
                     ])
                 ]),
+
+
+            dash.html.Hr(),
+            dash.html.H2("Presets"),
+            dash.html.Div([
+                dash.dcc.Dropdown(
+                    id='preset-selector', 
+                    placeholder="Load a preset...",
+                    style={'marginBottom': '10px'}
+                ),
+                dash.html.Div([
+                    dash.dcc.Input(
+                        id='preset-name-input', 
+                        type='text', 
+                        placeholder="Preset Name...",
+                        style={
+                            'flex': '2', 
+                            'padding': '8px', 
+                            'borderRadius': '5px', 
+                            'border': '1px solid #ccc',
+                            'marginRight': '5px'
+                        }
+                    ),
+                    dash.html.Button(
+                        "💾 Save", 
+                        id='save-preset-btn', 
+                        n_clicks=0,
+                        style={
+                            'flex': '1',
+                            'backgroundColor': '#6c757d', 
+                            'color': 'white', 
+                            'border': 'none', 
+                            'borderRadius': '5px',
+                            'cursor': 'pointer',
+                            'fontWeight': 'bold'
+                        }
+                    )
+                ], style={'display': 'flex', 'width': '100%'})
+            ], style={'backgroundColor': '#f0f0f0', 'padding': '15px', 'borderRadius': '8px', 'marginBottom': '20px'}),
 
             dash.html.Hr(),
             dash.html.H2("Effects chain"),
@@ -494,6 +552,60 @@ def stop_stream(n_clicks):
         )
 def reset_loading_state(n_clicks):
     return {'busy': False}
+
+
+@app.callback(
+    dash.Output('presets-store', 'data'),
+    dash.Output('preset-selector', 'options'),
+    dash.Output('preset-name-input', 'value'),
+    dash.Input('save-preset-btn', 'n_clicks'),
+    dash.Input('presets-store', 'data'), # Listen to init load
+    dash.State('preset-name-input', 'value'),
+    dash.State('effects-chain-store', 'data'),
+)
+def manage_presets(n_clicks, presets_data, new_name, current_chain):
+    # Initialize if empty or first load
+    if presets_data is None:
+        presets_data = DEFAULT_PRESETS.copy()
+
+    # If triggered by Save button
+    if dash.ctx.triggered_id == 'save-preset-btn':
+        if new_name and current_chain:
+            # Save deep copy to ensure we don't store references
+            presets_data[new_name] = copy.deepcopy(current_chain)
+            # Clear input after save
+            new_name = ""
+
+    # Generate options for dropdown
+    options = [{'label': name, 'value': name} for name in presets_data.keys()]
+    
+    return presets_data, options, new_name
+
+
+@app.callback(
+    dash.Output('effects-chain-store', 'data', allow_duplicate=True),
+    dash.Output('ws-commands-store', 'data', allow_duplicate=True),
+    dash.Input('preset-selector', 'value'),
+    dash.State('presets-store', 'data'),
+    prevent_initial_call=True
+)
+def load_preset(selected_preset_name, presets_data):
+    if not selected_preset_name or not presets_data:
+        return dash.no_update, dash.no_update
+    
+    if selected_preset_name in presets_data:
+        # Get chain
+        new_chain = copy.deepcopy(presets_data[selected_preset_name])
+        
+        # We must regenerate UUIDs to ensure unique keys for UI rendering
+        # (Optional, but good practice if loading same preset twice allows unique modifications)
+        for effect in new_chain:
+            effect['effect_id'] = str(uuid.uuid4())
+
+        command = {'command': 'build_chain', 'config': new_chain}
+        return new_chain, command
+    
+    return dash.no_update, dash.no_update
 
 
 # command sender
