@@ -30,6 +30,11 @@ EFFECT_DEFAULTS = {
         'octaver': {
             'semitones': -12.0, # Octave down by default
             'mix': 0.5
+            },
+        'filter': {
+            'filter_type': 0, # 0=LP, 1=HP, 2=BP
+            'cutoff_hz': 1000,
+            'q': 0.707
             }
         }
 
@@ -48,6 +53,20 @@ DEFAULT_PRESETS = {
     "Clean Noise Removal": [
         {'effect_id': 'p6', 'type': 'spectral', 'params': {'threshold_db': -50, 'reduction': 0.1}},
         {'effect_id': 'p7', 'type': 'gate', 'params': {'threshold_db': -40, 'attack_ms': 5, 'release_ms': 200}}
+    ],
+    "Guitar Filter": [
+        {'effect_id': 'g1', 'type': 'filter', 'params': {
+            'filter_type': 2,    # Band Pass
+            'cutoff_hz': 800,    # Center of guitar presence
+            'q': 0.8             # Wide bandwidth to capture the body, cut lows/highs
+        }},
+        {'effect_id': 'g2', 'type': 'reverb', 'params': {
+            'mix_wet': 0.2, 'rt60_s': 1.0 
+        }}
+    ],
+    "Rain Delay": [
+        {'effect_id': 'c72c38b4-4b1e-4ef8-9687-045748e4c8d4', 'type': 'delay', 'params': {'feedback': 0.2, 'delay_ms': 375, 'mix_dry': 1, 'mix_wet': 1, 'offset_ms': 0}},
+        {'effect_id': '6a61b939-c8f6-4fce-9c31-111df23c6afb', 'type': 'reverb', 'params': {'rt60_s': 2.1, 'mix_wet': 0.4, 'mix_dry': 0.8, 'damp': 0.05, 'pre_delay_ms': 0}}
     ]
 }
 
@@ -92,6 +111,12 @@ def create_effect_card(effect_data, index, total_count):
         control_configs = [
                 ('semitones', "Pitch Shift (Semitones)", -24, 24, 1),
                 ('mix', "Mix (0=Dry, 1=Wet)", 0.0, 1.0, 0.05),
+                ]
+    elif effect_type == 'filter':
+        control_configs = [
+                ('filter_type', "Type (0=Low, 1=High, 2=Band)", 0, 2, 1),
+                ('cutoff_hz', "Frequency (Hz)", 20, 10000, 10),
+                ('q', "Resonance (Q)", 0.1, 5.0, 0.1),
                 ]
 
     controls_ui = []
@@ -273,7 +298,8 @@ app.layout = dash.html.Div([
                 {'label': 'Reverb', 'value': 'reverb'},
                 {'label': 'Noise Gate', 'value': 'gate'},
                 {'label': 'Spectral Filter', 'value': 'spectral'},
-                {'label': 'Octaver', 'value': 'octaver'}
+                {'label': 'Octaver', 'value': 'octaver'},
+                {'label': 'EQ Filter', 'value': 'filter'}
                 ], placeholder='Select an effect to add...')
 
         ], style={

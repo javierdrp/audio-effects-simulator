@@ -49,6 +49,7 @@ class AudioEngine:
             elif effect_type == 'gate': fx = ab.NoiseGateEffect(**params)
             elif effect_type == 'spectral': fx = ab.SpectralFilter(**params)
             elif effect_type == 'octaver': fx = ab.OctaverEffect(**params)
+            elif effect_type == 'filter': fx = ab.FilterEffect(**params)
             else: continue
             chain.add(fx)
 
@@ -89,6 +90,7 @@ class AudioEngine:
                 elif effect_type == "gate": fx = ab.NoiseGateEffect(**params)
                 elif effect_type == "spectral": fx = ab.SpectralFilter(**params)
                 elif effect_type == "octaver": fx = ab.OctaverEffect(**params)
+                elif effect_type == 'filter': fx = ab.FilterEffect(**params)
                 else: continue
                 chain.add(fx)
             chain.warmup()

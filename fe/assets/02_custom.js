@@ -2,6 +2,7 @@
 
 let ws;
 
+// INCREASED SIZE for better bass resolution (2.9Hz per bin)
 const PLOT_WINDOW_SIZE = 131072; // 2**17, 2.73secs 
 const FFT_SIZE = 16384;
 const AUDIO_SAMPLE_RATE_DEFAULT = 48000;
@@ -16,7 +17,7 @@ let currentFileSampleRate = AUDIO_SAMPLE_RATE_DEFAULT;
 
 let playbackRafId = null;
 
-// --- FFT CACHE (Performance Optimization) ---
+// --- FFT CACHE ---
 let cachedFFT = null;
 let cachedFFTSize = 0;
 
@@ -28,16 +29,38 @@ function getFFT(size) {
     return cachedFFT;
 }
 
-const COMMON_LAYOUT = {
-    font: { family: 'Arial, sans-serif', size: 12, color: '#333' },
-    plot_bgcolor: '#fcfcfc',
-    paper_bgcolor: '#ffffff',
-    margin: { l: 40, r: 20, t: 40, b: 30 },
-    showlegend: true,
-    legend: { x: 1, y: 1, xanchor: 'right' }
+// --- PROFESSIONAL STYLING ---
+const COLORS = {
+    original: '#607d8b',  // Slate Blue (Input)
+    processed: '#d35400', // Burnt Orange (Output)
+    grid: '#f0f0f0',
+    text: '#2c3e50',
+    bg: '#ffffff'
 };
 
-// --- GUITAR-OPTIMIZED CHROMAGRAM ---
+const COMMON_LAYOUT = {
+    font: { 
+        family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif', 
+        size: 11, 
+        color: COLORS.text 
+    },
+    plot_bgcolor: COLORS.bg,
+    paper_bgcolor: COLORS.bg,
+    margin: { l: 40, r: 20, t: 40, b: 30 },
+    showlegend: true,
+    legend: { 
+        x: 1, 
+        y: 1.15, 
+        xanchor: 'right', 
+        yanchor: 'top',
+        orientation: 'h', 
+        bgcolor: 'rgba(255,255,255,0)' 
+    },
+    xaxis: { showgrid: true, gridcolor: COLORS.grid, zeroline: false, automargin: true },
+    yaxis: { showgrid: true, gridcolor: COLORS.grid, zeroline: false, automargin: true }
+};
+
+// --- DATA PROCESSING ---
 function calculateChroma(magnitudes, sampleRate, n_fft) {
     const chroma = new Array(12).fill(0);
     const n_bins = magnitudes.length;
@@ -51,38 +74,31 @@ function calculateChroma(magnitudes, sampleRate, n_fft) {
         const freq = k * (sampleRate / n_fft);
         const mag = magnitudes[k];
 
-        // Filter out Rumble and High Harmonics
         if (freq < 70) continue; 
         
         let weighting = 1.0;
         if (freq > 800) weighting *= 0.5;
         if (freq > 1500) weighting *= 0.1;
-        if (freq > 5000) continue; // Hard cut
+        if (freq > 5000) continue; 
 
         if (mag * weighting < threshold) continue;
 
-        // MIDI Note calculation
         const midi = 12 * Math.log2(freq / 440) + 69;
         const nearestNote = Math.round(midi);
         const deviation = Math.abs(midi - nearestNote);
 
-        // Relaxed Tuning Check:
-        // We allow up to 0.45 semitone deviation because FFT bins are discrete.
-        // This prevents "dropping" valid notes that land between bins.
         if (deviation > 0.50) continue;
 
         const pitchClass = nearestNote % 12;
         const idx = (pitchClass + 12) % 12;
 
-        // Add energy
         chroma[idx] += mag * weighting; 
     }
 
-    // Normalize
     const maxChroma = Math.max(...chroma) + 1e-9;
     for(let i=0; i<12; i++) {
         let val = chroma[i] / maxChroma;
-        chroma[i] = val * val * val; // Cubic contrast
+        chroma[i] = val * val * val; 
     }
 
     return chroma;
@@ -94,7 +110,6 @@ function calculateSpectrumAndChroma(signal, sampleRate) {
     // Windowing
     const windowedSignal = new Array(n_fft);
     for (let i = 0; i < n_fft; i++) {
-        // Blackman-Harris window (better side-lobe rejection than Hanning)
         const a0 = 0.35875, a1 = 0.48829, a2 = 0.14128, a3 = 0.01168;
         const w = a0 - a1*Math.cos(2*Math.PI*i/(n_fft-1)) + a2*Math.cos(4*Math.PI*i/(n_fft-1)) - a3*Math.cos(6*Math.PI*i/(n_fft-1));
         windowedSignal[i] = signal[i] * w;
@@ -109,7 +124,7 @@ function calculateSpectrumAndChroma(signal, sampleRate) {
 
     const n_bins = n_fft / 2 + 1;
     const magnitudesDB = new Array(n_bins);
-    const magnitudesLin = new Array(n_bins); // Need linear for Chroma
+    const magnitudesLin = new Array(n_bins); 
     const freqs = new Array(n_bins);
 
     let peakMag = -Infinity;
@@ -126,8 +141,6 @@ function calculateSpectrumAndChroma(signal, sampleRate) {
         const normalized = magnitude / n_fft;
         magnitudesDB[k] = 20 * Math.log10(normalized + 1e-9);
 
-        // Track Peak Frequency for Debugging
-        // Ignore DC and Rumble < 60Hz
         if (freqs[k] > 60 && magnitudesDB[k] > peakMag) {
             peakMag = magnitudesDB[k];
             peakFreq = freqs[k];
@@ -148,8 +161,7 @@ function renderPlots(inputData, outputData, sampleRate, isRealTime) {
     if (typeof Plotly === 'undefined') return;
 
     // --- 1. PREPARE TIME DOMAIN DATA (Decimated) ---
-    // Downsample to keep the UI responsive while showing 2+ seconds of history
-    const step = 40; // 131072 / 40 ~= 3200 points to render
+    const step = 40; 
     const plotLen = Math.floor(inputData.length / step);
     
     const tAxis = new Array(plotLen);
@@ -162,8 +174,7 @@ function renderPlots(inputData, outputData, sampleRate, isRealTime) {
         tOutput[j] = outputData[i];
     }
 
-    // --- 2. PREPARE FREQUENCY DOMAIN DATA (Windowed) ---
-    // We only FFT the most recent chunk to maintain speed and relevance
+    // --- 2. PREPARE FREQUENCY DOMAIN DATA ---
     const sliceStart = inputData.length - FFT_SIZE;
     const inputSlice = inputData.slice(sliceStart);
     const outputSlice = outputData.slice(sliceStart);
@@ -176,25 +187,50 @@ function renderPlots(inputData, outputData, sampleRate, isRealTime) {
     
     // Time Domain
     Plotly.react('time-domain-graph', [
-        { x: tAxis, y: tInput, name: 'Original', type: 'scatter', line: {width: 1, color: '#002288'}, opacity: 0.6 },
-        { x: tAxis, y: tOutput, name: 'Processed', type: 'scatter', line: {width: 1, color: '#dd2222'}, opacity: 0.8 }
+        { 
+            x: tAxis, y: tInput, 
+            name: 'Original', 
+            type: 'scatter', 
+            line: {width: 1, color: COLORS.original}, 
+            hoverinfo: 'none' 
+        },
+        { 
+            x: tAxis, y: tOutput, 
+            name: 'Processed', 
+            type: 'scatter', 
+            line: {width: 1.2, color: COLORS.processed}, 
+            hoverinfo: 'none' 
+        }
     ], {
         ...COMMON_LAYOUT,
-        title: { text: 'Time Domain', y: 0.9, x: 0.5, xanchor: 'center', yanchor: 'top' },
-        xaxis: { title: 'Time (s)', automargin: true, showgrid: false },
-        yaxis: { range: [-1, 1], showgrid: true }
+        title: { text: 'Time Domain', font: {size: 14}, x: 0, xanchor: 'left' },
+        xaxis: { title: 'Time (s)', ...COMMON_LAYOUT.xaxis },
+        yaxis: { range: [-1, 1], ...COMMON_LAYOUT.yaxis }
     });
 
     // Spectrum
     const peakLabel = `Spectrum (Peak: ${dIn.peakFreq.toFixed(1)} Hz)`;
     Plotly.react('spectrum-graph', [
-        { x: dIn.freqs, y: dIn.magnitudesDB, name: 'Original', type: 'scatter', mode: 'lines', line: {width: 1, color: '#002288'}, fill: 'tozeroy', opacity: 0.3 },
-        { x: dOut.freqs, y: dOut.magnitudesDB, name: 'Processed', type: 'scatter', mode: 'lines', line: {width: 1.5, color: '#dd2222'} }
+        { 
+            x: dIn.freqs, y: dIn.magnitudesDB, 
+            name: 'Original', 
+            type: 'scatter', 
+            mode: 'lines', 
+            line: {width: 1.5, color: COLORS.original}
+            // Removed fill: 'tozeroy' for cleaner look
+        },
+        { 
+            x: dOut.freqs, y: dOut.magnitudesDB, 
+            name: 'Processed', 
+            type: 'scatter', 
+            mode: 'lines', 
+            line: {width: 1.8, color: COLORS.processed} 
+        }
     ], {
         ...COMMON_LAYOUT,
-        title: { text: peakLabel, y: 0.9, x: 0.5, xanchor: 'center', yanchor: 'top' },
-        xaxis: { type: 'log', range: [Math.log10(40), Math.log10(sampleRate / 2)], title: 'Hz' },
-        yaxis: { range: [-80, 0], title: 'dB' }
+        title: { text: peakLabel, font: {size: 14}, x: 0, xanchor: 'left' },
+        xaxis: { type: 'log', range: [Math.log10(40), Math.log10(sampleRate / 2)], title: 'Hz', ...COMMON_LAYOUT.xaxis },
+        yaxis: { range: [-80, 0], title: 'dB', ...COMMON_LAYOUT.yaxis }
     });
 
     // Chromagram
@@ -204,60 +240,56 @@ function renderPlots(inputData, outputData, sampleRate, isRealTime) {
             theta: NOTES,
             name: 'Original',
             type: 'barpolar',
-            marker: { color: '#002288', opacity: 0.4 }
+            marker: { color: COLORS.original, opacity: 0.6 }
         },
         {
             r: dOut.chroma,
             theta: NOTES,
             name: 'Processed',
             type: 'barpolar',
-            marker: { color: '#dd2222', opacity: 0.7, line: { color: 'white', width: 1 } }
+            marker: { color: COLORS.processed, opacity: 0.8, line: { color: 'white', width: 1 } }
         }
     ], {
         ...COMMON_LAYOUT,
-        title: { text: 'Pitch Class', y: 0.95 },
+        title: { text: 'Pitch Class', font: {size: 14}, x: 0.5, xanchor: 'center' }, 
         polar: {
             radialaxis: { visible: false, range: [0, 1] },
-            angularaxis: { direction: "clockwise", period: 12 }
+            angularaxis: { direction: "clockwise", period: 12, tickfont: {size: 10} },
+            bgcolor: COLORS.bg
         },
-        showlegend: false
+        showlegend: false,
+        margin: { ...COMMON_LAYOUT.margin, t: 50 } // Increased top margin to prevent title overlap
     });
 }
 
 function updatePlotsForPlaybackTime(currentTime) {
     if (fullAudioOriginal.length === 0) return;
 
-    // This compensates for:
-    // 1. The FFT window averaging (the transient needs to be inside the window)
-    // 2. The time it takes for JS to calculate and Plotly to render the frame
-    const LOOKAHEAD_SEC = 0.18; 
-
-    // Use same large window for file playback consistency
+    // Latency compensation (~120ms ahead)
+    const LOOKAHEAD_SEC = 0.12; 
     const plotBlockSize = PLOT_WINDOW_SIZE; 
-    const currentSampleIndex = Math.floor((currentTime + LOOKAHEAD_SEC) * currentFileSampleRate);
+    
+    let currentSampleIndex = Math.floor((currentTime + LOOKAHEAD_SEC) * currentFileSampleRate);
+
+    // Clamp to end
+    if (currentSampleIndex > fullAudioOriginal.length) {
+        currentSampleIndex = fullAudioOriginal.length;
+    }
 
     let originalSlice, processedSlice;
     const startIndex = currentSampleIndex - plotBlockSize;
 
     if (startIndex >= 0) {
-        // Standard case: We have enough history
-        // Slice from [Now - Window] to [Now]
         originalSlice = fullAudioOriginal.slice(startIndex, currentSampleIndex);
         processedSlice = fullAudioProcessed.slice(startIndex, currentSampleIndex);
     } else {
-        // Start of file case: We don't have enough history yet
-        // Create a zero-filled buffer and fill the end with what we have
-        // This ensures the graph scrolls in from the right, just like Live Mode
         originalSlice = new Array(plotBlockSize).fill(0);
         processedSlice = new Array(plotBlockSize).fill(0);
-
-        // Get all available data from 0 to Now
-        const availableDataOrig = fullAudioOriginal.slice(0, currentSampleIndex);
-        const availableDataProc = fullAudioProcessed.slice(0, currentSampleIndex);
-
-        // Copy into the end of the buffer
-        const offset = plotBlockSize - currentSampleIndex;
-        for (let i = 0; i < currentSampleIndex; i++) {
+        const availableLen = Math.min(currentSampleIndex, fullAudioOriginal.length);
+        const availableDataOrig = fullAudioOriginal.slice(0, availableLen);
+        const availableDataProc = fullAudioProcessed.slice(0, availableLen);
+        const offset = plotBlockSize - availableLen;
+        for (let i = 0; i < availableLen; i++) {
             originalSlice[offset + i] = availableDataOrig[i];
             processedSlice[offset + i] = availableDataProc[i];
         }
@@ -266,7 +298,6 @@ function updatePlotsForPlaybackTime(currentTime) {
     renderPlots(originalSlice, processedSlice, currentFileSampleRate, false);
 }
 
-// ... (Audio Listener / Websocket code remains exactly the same) ...
 function attemptAttachAudioListeners() {
     const playerOrig = document.getElementById('player-original');
     const playerProc = document.getElementById('player-processed');
