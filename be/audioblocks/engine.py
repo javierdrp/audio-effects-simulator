@@ -28,12 +28,13 @@ class AudioEngine:
         self.last_chain_config = []
         self.is_processing_file = False
         self.status_count = 0
+        self.current_sample_rate = SAMPLE_RATE
 
         self.build_chain([])
 
     def build_chain(self, effects_config: list[dict]):
         self.last_chain_config = effects_config
-        chain = ab.EffectsChain(SAMPLE_RATE, CHANNELS_IN, CHANNELS_OUT, BLOCKSIZE)
+        chain = ab.EffectsChain(self.current_sample_rate, CHANNELS_IN, CHANNELS_OUT, BLOCKSIZE)
         self.effects_map.clear()
 
         chain.add(ab.PlotDataTap(self.data_queues['input']))
@@ -154,7 +155,7 @@ class AudioEngine:
 
         try:
             self.stream = sd.Stream(
-                samplerate=SAMPLE_RATE,
+                samplerate=self.current_sample_rate,
                 blocksize=BLOCKSIZE,
                 dtype='float32',
                 latency='low',
@@ -164,6 +165,11 @@ class AudioEngine:
             )
             self.stream.start()
             self.is_running = True
+            actual_rate = self.stream.samplerate
+            if actual_rate != self.current_sample_rate:
+                self.current_sample_rate = int(actual_rate)
+                print(f"Rebuilding effects chain for {self.current_sample_rate} Hz...")
+                self.build_chain(self.last_chain_config)
         except Exception as e:
             print(f"Error on stream start: {e}")
 

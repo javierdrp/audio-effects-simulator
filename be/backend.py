@@ -18,19 +18,31 @@ import audioblocks as ab
 connected_client = None
 
 
-async def data_sender(websocket, data_queues: dict[str, queue.Queue], sample_rate):
+async def data_sender(websocket, data_queues: dict[str, queue.Queue], audio_engine):
     while True:
         try:
-            in_data = data_queues['input'].get_nowait()
-            out_data = data_queues['output'].get_nowait()
+            in_frames = []
+            out_frames = []
+            
+            while True:
+                try:
+                    in_frames.append(data_queues['input'].get_nowait())
+                    out_frames.append(data_queues['output'].get_nowait())
+                except queue.Empty:
+                    break
+            
+            if len(in_frames) > 0:
+                # Concatenate the list of arrays into one big contiguous array
+                in_chunk = np.concatenate(in_frames)
+                out_chunk = np.concatenate(out_frames)
 
-            payload = {
-                "type": "plot_data",
-                "input": in_data[:, 0].tolist(),
-                "output": out_data[:, 0].tolist(),
-                "sample_rate": sample_rate
-            }
-            await websocket.send(json.dumps(payload))
+                payload = {
+                    "type": "plot_data",
+                    "input": in_chunk[:, 0].tolist(),
+                    "output": out_chunk[:, 0].tolist(),
+                    "sample_rate": audio_engine.current_sample_rate
+                }
+                await websocket.send(json.dumps(payload))
             await asyncio.sleep(0.033)
     
         except queue.Empty:
@@ -50,13 +62,13 @@ async def handler(websocket):
     connected_client = websocket
     print("Connected to frontend client")
     data_queues = {
-        "input": queue.Queue(maxsize=10),
-        "output": queue.Queue(maxsize=10)
+        "input": queue.Queue(maxsize=200),
+        "output": queue.Queue(maxsize=200)
     }
     audio_engine = ab.AudioEngine(data_queues)
 
     # start data send task
-    sender_task = asyncio.create_task(data_sender(websocket, data_queues, ab.SAMPLE_RATE))
+    sender_task = asyncio.create_task(data_sender(websocket, data_queues, audio_engine))
 
     try:
         async for message in websocket:

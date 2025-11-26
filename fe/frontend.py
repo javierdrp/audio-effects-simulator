@@ -288,35 +288,53 @@ app.layout = dash.html.Div([
                 'backgroundColor': '#fcfcfc'
                 }),
 
+       
         dash.html.Div([
-            # Graph 1 Wrapper
+            
+            # 1. TIME DOMAIN (Full Width, Top)
             dash.html.Div(
                 dash.dcc.Graph(
                     id='time-domain-graph', 
                     style={'height': '100%', 'width': '100%'},
-                    config={'responsive': True} # Important for flex resizing
-                    ),
-                style={'flex': '1', 'minHeight': '0', 'marginBottom': '10px'} # Takes 50%
+                    config={'responsive': True, 'displayModeBar': False} 
                 ),
-            # Graph 2 Wrapper
-            dash.html.Div(
-                dash.dcc.Graph(
-                    id='spectrum-graph', 
-                    style={'height': '100%', 'width': '100%'},
-                    config={'responsive': True}
+                style={'flex': '0 0 40%', 'marginBottom': '10px', 'minHeight': '0'} 
+            ),
+
+            # 2. ROW FOR SPECTRUM & CHROMA
+            dash.html.Div([
+                
+                # SPECTRUM (Bottom Left)
+                dash.html.Div(
+                    dash.dcc.Graph(
+                        id='spectrum-graph', 
+                        style={'height': '100%', 'width': '100%'},
+                        config={'responsive': True, 'displayModeBar': False}
                     ),
-                style={'flex': '1', 'minHeight': '0'} # Takes 50%
+                    style={'flex': '1', 'minWidth': '0', 'marginRight': '5px'}
                 ),
-            ], style={
-                # PLOT AREA STYLES
-                'display': 'flex',
-                'flex': '1',        # Takes remaining width
-                'height': '100%', 
-                'flexDirection': 'column',
-                'overflowY': 'hidden', # Enables vertical scrolling for plots if they overflow
-                'padding': '20px',
-                'boxSizing': 'border-box'
-                })
+
+                # CHROMAGRAM (Bottom Right - NEW)
+                dash.html.Div(
+                    dash.dcc.Graph(
+                        id='chroma-graph', 
+                        style={'height': '100%', 'width': '100%'},
+                        config={'responsive': True, 'displayModeBar': False}
+                    ),
+                    style={'flex': '1', 'minWidth': '0', 'marginLeft': '5px'}
+                ),
+
+            ], style={'flex': '1', 'display': 'flex', 'flexDirection': 'row', 'minHeight': '0'})
+
+        ], style={
+            'flex': '1',        
+            'height': '100%',
+            'display': 'flex',        
+            'flexDirection': 'column',
+            'overflow': 'hidden',     
+            'padding': '15px',
+            'boxSizing': 'border-box'
+        })
 
     ], style={
             # MAIN CONTAINER STYLES
@@ -375,7 +393,7 @@ def add_effect(effect_type, current_chain):
             'config': new_chain
             }
 
-    return new_chain, command, None
+    return new_chain, command, ""
 
 
 @app.callback(
