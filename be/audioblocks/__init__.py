@@ -4,3 +4,4 @@ from .reverb import ReverbEffect
 from .engine import AudioEngine, SAMPLE_RATE
 from .gate import NoiseGateEffect
 from .spectral import SpectralFilter
+from .octaver import OctaverEffect
