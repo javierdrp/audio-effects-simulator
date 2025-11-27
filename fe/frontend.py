@@ -71,6 +71,7 @@ DEFAULT_PRESETS = {
 }
 
 app = dash.Dash(__name__)
+app.title = "Audio Effects"
 
 
 def create_effect_card(effect_data, index, total_count):
@@ -193,9 +194,6 @@ app.layout = dash.html.Div([
     dash.html.Div([
         # control panel
         dash.html.Div([
-            dash.html.H1("Audio effects visualizer"),
-            dash.html.Hr(),
-            dash.html.Hr(),
             dash.html.H2("Audio source"),
             dash.dcc.RadioItems(id="source-mode-selector", options=[
                 {"label": " Microphone (live)", "value": "mic"},

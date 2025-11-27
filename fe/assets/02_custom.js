@@ -46,7 +46,8 @@ const COMMON_LAYOUT = {
     },
     plot_bgcolor: COLORS.bg,
     paper_bgcolor: COLORS.bg,
-    margin: { l: 40, r: 20, t: 40, b: 30 },
+    // Increased margins to ensure axis titles are visible
+    margin: { l: 60, r: 20, t: 50, b: 50 },
     showlegend: true,
     legend: { 
         x: 1, 
@@ -188,24 +189,31 @@ function renderPlots(inputData, outputData, sampleRate, isRealTime) {
     // Time Domain
     Plotly.react('time-domain-graph', [
         { 
-            x: tAxis, y: tInput, 
-            name: 'Original', 
-            type: 'scatter', 
-            line: {width: 1, color: COLORS.original}, 
-            hoverinfo: 'none' 
-        },
-        { 
             x: tAxis, y: tOutput, 
             name: 'Processed', 
             type: 'scatter', 
-            line: {width: 1.2, color: COLORS.processed}, 
+            line: {width: 1, color: COLORS.processed, opacity: 0.7}, 
+            hoverinfo: 'none' 
+        },
+        { 
+            x: tAxis, y: tInput, 
+            name: 'Original', 
+            type: 'scatter', 
+            line: {width: 1.2, color: COLORS.original, opacity: 0.7}, 
             hoverinfo: 'none' 
         }
     ], {
         ...COMMON_LAYOUT,
-        title: { text: 'Time Domain', font: {size: 14}, x: 0, xanchor: 'left' },
-        xaxis: { title: 'Time (s)', ...COMMON_LAYOUT.xaxis },
-        yaxis: { range: [-1, 1], ...COMMON_LAYOUT.yaxis }
+        title: { text: 'Time Domain', font: {size: 18}, x: 0, xanchor: 'left' },
+        xaxis: { 
+            ...COMMON_LAYOUT.xaxis,
+            title: { text: 'Time (s)', font: { size: 12 } } 
+        },
+        yaxis: { 
+            ...COMMON_LAYOUT.yaxis,
+            range: [-1, 1], 
+            title: { text: 'Amplitude', font: { size: 12 } }
+        }
     });
 
     // Spectrum
@@ -216,23 +224,30 @@ function renderPlots(inputData, outputData, sampleRate, isRealTime) {
             name: 'Original', 
             type: 'scatter', 
             mode: 'lines', 
-            line: {width: 1.5, color: COLORS.original}
-            // Removed fill: 'tozeroy' for cleaner look
+            line: {width: 1.5, color: COLORS.original, opacity: 0.7}
         },
         { 
             x: dOut.freqs, y: dOut.magnitudesDB, 
             name: 'Processed', 
             type: 'scatter', 
             mode: 'lines', 
-            line: {width: 1.8, color: COLORS.processed} 
+            line: {width: 1.8, color: COLORS.processed, opacity: 0.7} 
         }
     ], {
         ...COMMON_LAYOUT,
-        title: { text: peakLabel, font: {size: 14}, x: 0, xanchor: 'left' },
-        xaxis: { type: 'log', range: [Math.log10(40), Math.log10(sampleRate / 2)], title: 'Hz', ...COMMON_LAYOUT.xaxis },
-        yaxis: { range: [-80, 0], title: 'dB', ...COMMON_LAYOUT.yaxis }
+        title: { text: peakLabel, font: {size: 18}, x: 0, xanchor: 'left' },
+        xaxis: { 
+            ...COMMON_LAYOUT.xaxis,
+            type: 'log', 
+            range: [Math.log10(40), Math.log10(sampleRate / 2)], 
+            title: { text: 'Frequency (Hz)', font: { size: 12 } }
+        },
+        yaxis: { 
+            ...COMMON_LAYOUT.yaxis,
+            range: [-80, 0], 
+            title: { text: 'Relative magnitude (dB)', font: { size: 12 } }
+        }
     });
-
     // Chromagram
     Plotly.react('chroma-graph', [
         {
@@ -240,27 +255,29 @@ function renderPlots(inputData, outputData, sampleRate, isRealTime) {
             theta: NOTES,
             name: 'Original',
             type: 'barpolar',
-            marker: { color: COLORS.original, opacity: 0.6 }
+            // Use explicit RGBA for robust transparency
+            marker: { color: 'rgba(96, 125, 139, 0.5)', line: { color: 'rgba(96, 125, 139, 1)', width: 1 } }
         },
         {
             r: dOut.chroma,
             theta: NOTES,
             name: 'Processed',
             type: 'barpolar',
-            marker: { color: COLORS.processed, opacity: 0.8, line: { color: 'white', width: 1 } }
+            // Use explicit RGBA for robust transparency
+            marker: { color: 'rgba(211, 84, 0, 0.6)', line: { color: 'white', width: 1 } }
         }
     ], {
         ...COMMON_LAYOUT,
-        title: { text: 'Pitch Class', font: {size: 14}, x: 0.5, xanchor: 'center' }, 
+        title: { text: 'Pitch Class', font: {size: 18}, x: 0.5, xanchor: 'center' }, 
         polar: {
             radialaxis: { visible: false, range: [0, 1] },
             angularaxis: { direction: "clockwise", period: 12, tickfont: {size: 10} },
             bgcolor: COLORS.bg
         },
         showlegend: false,
-        margin: { ...COMMON_LAYOUT.margin, t: 50 } // Increased top margin to prevent title overlap
+        margin: { ...COMMON_LAYOUT.margin, t: 50 } 
     });
-}
+    }
 
 function updatePlotsForPlaybackTime(currentTime) {
     if (fullAudioOriginal.length === 0) return;

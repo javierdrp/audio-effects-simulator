@@ -3,10 +3,9 @@
 - metrónomo, trabajar con bpm en vez de ms
 
 # frontend
-- escuchar dry / mix (selector)
 - botón para reaplicar efectos al file // MEJOR hacer streaming con el file para que el backend aplique los efectos en vivo
 - exportar wav procesado
 - plot estereo
-- load examples -> rain
 - stereo offset negativo
 - opcion para smooth spectrum
+- procesar efectos en espectro

@@ -1,6 +1,3 @@
-# Start JACK in qjackctl (Driver: alsa, Interface: 1,0, 48 kHz, Frames/Period 256 to start, Periods 3).
-# zita-j2a -d hw:1,0 -r 48000 -p 256 -n 3 -c 2 -j phones
-
 import sys
 import sounddevice as sd
 import numpy as np
@@ -18,12 +15,32 @@ import audioblocks as ab
 connected_client = None
 
 
+def serialize_audio_data(in_frames, out_frames, sample_rate):
+    """
+    CPU-intensive task: concatenates numpy arrays and serializes to JSON.
+    Run this in an executor to avoid blocking the asyncio event loop.
+    """
+    # Concatenate the list of arrays into one big contiguous array
+    in_chunk = np.concatenate(in_frames)
+    out_chunk = np.concatenate(out_frames)
+
+    return json.dumps({
+        "type": "plot_data",
+        "input": in_chunk[:, 0].tolist(),
+        "output": out_chunk[:, 0].tolist(),
+        "sample_rate": sample_rate
+    })
+
+
 async def data_sender(websocket, data_queues: dict[str, queue.Queue], audio_engine):
+    loop = asyncio.get_running_loop()
+    
     while True:
         try:
             in_frames = []
             out_frames = []
             
+            # Drain the queue of available audio blocks
             while True:
                 try:
                     in_frames.append(data_queues['input'].get_nowait())
@@ -32,18 +49,20 @@ async def data_sender(websocket, data_queues: dict[str, queue.Queue], audio_engi
                     break
             
             if len(in_frames) > 0:
-                # Concatenate the list of arrays into one big contiguous array
-                in_chunk = np.concatenate(in_frames)
-                out_chunk = np.concatenate(out_frames)
-
-                payload = {
-                    "type": "plot_data",
-                    "input": in_chunk[:, 0].tolist(),
-                    "output": out_chunk[:, 0].tolist(),
-                    "sample_rate": audio_engine.current_sample_rate
-                }
-                await websocket.send(json.dumps(payload))
-            await asyncio.sleep(0.033)
+                # CRITICAL FIX: Run the heavy JSON serialization in a separate thread.
+                # This prevents the list conversion and JSON encoding from blocking 
+                # the asyncio loop, allowing 'stop' and 'update' commands to be processed immediately.
+                payload = await loop.run_in_executor(
+                    None, 
+                    serialize_audio_data, 
+                    in_frames, 
+                    out_frames, 
+                    audio_engine.current_sample_rate
+                )
+                
+                await websocket.send(payload)
+                
+            await asyncio.sleep(0.033) # ~30 FPS
     
         except queue.Empty:
             await asyncio.sleep(0.1)
@@ -101,8 +120,6 @@ async def handler(websocket):
         sender_task.cancel()
         connected_client = None
         print("Disconnected from frontend client")
-
-
 
 
 async def main():
