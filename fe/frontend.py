@@ -305,7 +305,7 @@ app.layout = dash.html.Div([
                 'width': '30%', 
                 'minWidth': '300px',
                 'height': '100%', 
-                'overflowY': 'auto', # Enables vertical scrolling for sidebar
+                'overflowY': 'auto',
                 'padding': '20px', 
                 'boxSizing': 'border-box',
                 'borderRight': '1px solid #ddd',
