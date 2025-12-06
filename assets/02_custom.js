@@ -355,7 +355,16 @@ function attemptAttachAudioListeners() {
 }
 
 function connectWebSocket() {
-    const backendUrl = "wss://audio-backend-2ypn.onrender.com";  // "ws://localhost:8765"
+    let backendUrl;
+    if (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost") {
+        // We are running locally
+        console.log("Environment: LOCAL");
+        backendUrl = "ws://localhost:8765";
+    } else {
+        // We are on Render (or any other cloud host)
+        console.log("Environment: CLOUD");
+        backendUrl = "wss://audio-backend-2ypn.onrender.com"; 
+    }
     console.log("Connecting to:", backendUrl);
     ws = new WebSocket(backendUrl);
     ws.onopen = (event) => { console.log("Connected"); attemptAttachAudioListeners(); };
