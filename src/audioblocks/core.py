@@ -1,13 +1,23 @@
 from __future__ import annotations
 import numpy as np
 import threading
-import sounddevice as sd
 import queue
+
+try:
+    import sounddevice as sd
+except (ImportError, OSError):
+    sd = None
 
 
 def pick_devices(ch_in=1, ch_out=2, in_hint=('usb','mic'), out_hint=('system',)):
+    if sd is None:
+        return None, None
+    
     """Return (in_idx, out_idx) preferring JACK, else Pulse."""
-    apis: list[dict[str, Any]] = sd.query_hostapis() # type: ignore
+    try:
+        apis: list[dict[str, Any]] = sd.query_hostapis() # type: ignore
+    except Exception:
+        return None, None
     jack_id  = next((i for i,a in enumerate(apis) if 'JACK'  in a['name']), None)
     pulse_id = next((i for i,a in enumerate(apis) if 'Pulse' in a['name']), None)
     devices: list[dict[str, Any]] = sd.query_devices() # type: ignore

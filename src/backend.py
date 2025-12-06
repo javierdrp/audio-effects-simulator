@@ -1,13 +1,11 @@
-import sys
 import sounddevice as sd
 import numpy as np
-import threading
 import gc
-import soundfile as sf
 import queue
 import asyncio
 import websockets as ws
 import json
+import os
 
 import audioblocks as ab
 
@@ -124,8 +122,11 @@ async def handler(websocket):
 
 async def main():
     gc.disable()
-    print("Audio effects server initialized on ws://localhost:8765")
-    async with ws.serve(handler, "localhost", 8765, max_size = 500 * 1024 * 1024):
+
+    port = int(os.environ.get("PORT", 8765))
+    print(f"Audio effects server initialized on port {port}")
+
+    async with ws.serve(handler, "0.0.0.0", port, max_size = 500 * 1024 * 1024):
         await asyncio.Future()
         
 

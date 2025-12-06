@@ -355,7 +355,9 @@ function attemptAttachAudioListeners() {
 }
 
 function connectWebSocket() {
-    ws = new WebSocket("ws://localhost:8765");
+    const backendUrl = "wss://YOUR-BACKEND-NAME.onrender.com";  // "ws://localhost:8765"
+    console.log("Connecting to:", backendUrl);
+    ws = new WebSocket(backendUrl);
     ws.onopen = (event) => { console.log("Connected"); attemptAttachAudioListeners(); };
     ws.onmessage = (event) => {
         const data = JSON.parse(event.data);

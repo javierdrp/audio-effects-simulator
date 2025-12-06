@@ -1,8 +1,6 @@
 from __future__ import annotations
 import json
 import queue
-import sounddevice as sd
-import sys
 import base64
 import io
 import numpy as np
@@ -10,6 +8,11 @@ import soundfile as sf
 import scipy.io
 
 import audioblocks as ab
+
+try:
+    import sounddevice as sd
+except (ImportError, OSError):
+    sd = None
 
 
 SAMPLE_RATE  = 48000
@@ -144,6 +147,10 @@ class AudioEngine:
     def start_mic_stream(self):
         if self.is_running:
             print(f"Warning: stream is already running")
+            return
+
+        if sd is None:
+            print("Server Mode: Microphone hardware not available. Stream ignored.")
             return
         
         def callback(indata, outdata, frames, time, status):

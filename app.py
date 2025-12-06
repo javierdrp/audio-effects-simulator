@@ -72,6 +72,7 @@ DEFAULT_PRESETS = {
 
 app = dash.Dash(__name__)
 app.title = "Audio Effects"
+server = app.server
 
 
 def create_effect_card(effect_data, index, total_count):
