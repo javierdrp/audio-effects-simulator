@@ -38,8 +38,8 @@ Para utilizar la funcionalidad de micrófono en tiempo real y obtener la menor l
 
 1. **Clonar el repositorio:**
    ```bash
-   git clone <URL_DE_TU_REPOSITORIO>
-   cd <NOMBRE_DE_LA_CARPETA>
+   git clone https://github.com/javierdrp/audio-effects-simulator
+   cd audio-effects-simulator
    ```
 
 2. **Crear y activar un entorno virtual:**
